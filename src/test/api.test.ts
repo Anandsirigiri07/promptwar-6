@@ -255,4 +255,37 @@ describe('Backend API Route & Middleware Unit Tests (In-Memory)', () => {
 
     expect(logResult).toBeNull();
   });
+
+  it('Durable idempotency returns cached action and prevents duplicate counter increments', async () => {
+    const testIdempKey = `idemp-test-${Date.now()}`;
+    const pledge = await getCommunityPledgeById('pledge-carpool-koramangala');
+    const beforeCount = pledge!.completedCount;
+
+    // First submission
+    const firstResult = await logCommunityAction({
+      id: `action-idemp-1-${Date.now()}`,
+      userId: 'idemp-evaluator',
+      pledgeId: 'pledge-carpool-koramangala',
+      unitsCompleted: 4,
+      idempotencyKey: testIdempKey
+    });
+
+    expect(firstResult).toBeDefined();
+    expect(firstResult?.isDuplicate).toBe(false);
+    expect(firstResult?.updatedPledge.completedCount).toBe(beforeCount + 4);
+
+    // Replayed submission with identical idempotencyKey
+    const secondResult = await logCommunityAction({
+      id: `action-idemp-2-${Date.now()}`,
+      userId: 'idemp-evaluator',
+      pledgeId: 'pledge-carpool-koramangala',
+      unitsCompleted: 4,
+      idempotencyKey: testIdempKey
+    });
+
+    expect(secondResult).toBeDefined();
+    expect(secondResult?.isDuplicate).toBe(true);
+    // Crucial: completed count did not increment again!
+    expect(secondResult?.updatedPledge.completedCount).toBe(beforeCount + 4);
+  });
 });

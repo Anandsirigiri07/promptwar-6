@@ -8,26 +8,24 @@ import { initializeApp, getApps, FirebaseApp } from 'firebase/app';
 import { getAuth, Auth } from 'firebase/auth';
 import { getFirestore, Firestore } from 'firebase/firestore';
 
-const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || 'AIzaSyDemoPlaceholderKey123456789',
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || 'vayuwise-demo.firebaseapp.com',
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || 'vayuwise-demo',
-  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || 'vayuwise-demo.appspot.com',
-  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || '1234567890',
-  appId: import.meta.env.VITE_FIREBASE_APP_ID || '1:1234567890:web:abcdef'
-};
-
-let app: FirebaseApp | null = null;
-let auth: Auth | null = null;
-let firestore: Firestore | null = null;
-
+const rawApiKey = import.meta.env.VITE_FIREBASE_API_KEY;
 const isConfigured = Boolean(
-  import.meta.env.VITE_FIREBASE_API_KEY && 
-  !import.meta.env.VITE_FIREBASE_API_KEY.includes('Demo')
+  rawApiKey && 
+  rawApiKey.trim() !== '' &&
+  !rawApiKey.includes('Demo') &&
+  !rawApiKey.includes('your_client_api_key')
 );
 
 if (isConfigured) {
   try {
+    const firebaseConfig = {
+      apiKey: rawApiKey,
+      authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+      projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+      storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+      messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+      appId: import.meta.env.VITE_FIREBASE_APP_ID
+    };
     app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0]!;
     auth = getAuth(app);
     firestore = getFirestore(app);

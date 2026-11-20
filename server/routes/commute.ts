@@ -140,9 +140,20 @@ commuteRouter.post(
           comparisons,
           recommendedMode: recommended.mode,
           routingTopology: 'Demonstration Urban Transit Topology',
+          isDemonstrationTopology: true,
           dijkstraExposureOptimized: lowestExposureRoute,
           dijkstraShortestDistance: shortestRoute,
-          tradeoffSummary: reasoning
+          tradeoffSummary: reasoning,
+          disclaimer: 'Mode comparisons are mathematical scenario models based on distance, ambient PM2.5, ventilation rates, and vehicle filtration factors. The Dijkstra route demonstrates exposure minimization across a representative urban transit graph and is not a GPS turn-by-turn navigation route.',
+          modeAssumptions: {
+            metro: { speedKmh: 35, respirationM3h: 0.6, filtrationEfficiency: 0.65, emissionGramsPerKm: 14 },
+            electric_bus: { speedKmh: 18, respirationM3h: 0.6, filtrationEfficiency: 0.40, emissionGramsPerKm: 25 },
+            diesel_bus: { speedKmh: 16, respirationM3h: 0.65, filtrationEfficiency: 0.10, emissionGramsPerKm: 68 },
+            ev_car: { speedKmh: 22, respirationM3h: 0.55, filtrationEfficiency: 0.70, emissionGramsPerKm: 42 },
+            petrol_car: { speedKmh: 20, respirationM3h: 0.55, filtrationEfficiency: 0.50, emissionGramsPerKm: 145 },
+            cycling: { speedKmh: 14, respirationM3h: 1.8, filtrationEfficiency: 0.0, emissionGramsPerKm: 0 },
+            walking: { speedKmh: 4.5, respirationM3h: 1.2, filtrationEfficiency: 0.0, emissionGramsPerKm: 0 }
+          }
         }
       });
     } catch (err) {

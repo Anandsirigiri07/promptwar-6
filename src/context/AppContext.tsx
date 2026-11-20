@@ -2,7 +2,7 @@
  * VAYUWISE AI - Core Application State Context Provider
  */
 
-import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { AppContextState, AppContextActions } from './types.js';
 import { UrbanZoneTelemetry, ScenarioType } from '../types/telemetry.js';
 import { PersonaType, DailyPersonalizedRoutine } from '../types/routine.js';
@@ -66,10 +66,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
+  const isMountedRef = useRef<boolean>(true);
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
+
   // Sync document language and text direction for RTL (Arabic)
   useEffect(() => {
-    document.documentElement.lang = preferences.language;
-    document.documentElement.dir = isRTLLanguage(preferences.language) ? 'rtl' : 'ltr';
+    if (typeof document !== 'undefined' && document.documentElement) {
+      document.documentElement.lang = preferences.language;
+      document.documentElement.dir = isRTLLanguage(preferences.language) ? 'rtl' : 'ltr';
+    }
   }, [preferences.language]);
 
   // Persist preferences
@@ -85,7 +96,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // Listen for real Firebase or local auth state changes
   useEffect(() => {
     const unsubscribe = authService.onAuthStateChanged((user) => {
-      setCurrentUser(user);
+      if (isMountedRef.current) {
+        setCurrentUser(user);
+      }
     });
     return () => unsubscribe();
   }, []);
@@ -93,24 +106,55 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const isDemoMode = useMemo(() => {
     return !currentUser || currentUser.isDemoUser;
   }, [currentUser]);
+
   const refreshTelemetry = useCallback(async () => {
+    if (!isMountedRef.current) return;
     setIsLoading(true);
     try {
       const zones = await airQualityService.getZones(preferences.city, currentScenario);
-      setAllZones(zones);
-      setError(null);
+      if (isMountedRef.current) {
+        setAllZones(zones);
+        setError(null);
+      }
     } catch (err: unknown) {
-      console.warn('Telemetry load failed, using local fallback:', err);
-      // Fallback local zones
-      setError('Live telemetry connection offline. Using local verified sensor simulation.');
+      if (isMountedRef.current) {
+        console.warn('Telemetry load failed, using local fallback:', err);
+        setError('Live telemetry connection offline. Using local verified sensor simulation.');
+      }
     } finally {
-      setIsLoading(false);
+      if (isMountedRef.current) {
+        setIsLoading(false);
+      }
     }
   }, [preferences.city, currentScenario]);
 
   useEffect(() => {
-    refreshTelemetry();
-  }, [refreshTelemetry]);
+    let active = true;
+    const fetchTelemetry = async () => {
+      if (!isMountedRef.current) return;
+      setIsLoading(true);
+      try {
+        const zones = await airQualityService.getZones(preferences.city, currentScenario);
+        if (active && isMountedRef.current) {
+          setAllZones(zones);
+          setError(null);
+        }
+      } catch (err: unknown) {
+        if (active && isMountedRef.current) {
+          console.warn('Telemetry load failed, using local fallback:', err);
+          setError('Live telemetry connection offline. Using local verified sensor simulation.');
+        }
+      } finally {
+        if (active && isMountedRef.current) {
+          setIsLoading(false);
+        }
+      }
+    };
+    fetchTelemetry();
+    return () => {
+      active = false;
+    };
+  }, [preferences.city, currentScenario]);
 
   const updatePreferences = useCallback((updates: Partial<UserPreferences>) => {
     setPreferences(prev => ({ ...prev, ...updates }));
@@ -123,14 +167,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const setScenario = useCallback(async (scenario: ScenarioType) => {
     setCurrentScenario(scenario);
+    if (!isMountedRef.current) return;
     setIsLoading(true);
     try {
       const sim = await airQualityService.simulateScenario(scenario, selectedZoneId);
-      setAllZones(sim.allZones);
+      if (isMountedRef.current) {
+        setAllZones(sim.allZones);
+      }
     } catch (err) {
-      console.warn('Scenario simulation failed:', err);
+      if (isMountedRef.current) {
+        console.warn('Scenario simulation failed:', err);
+      }
     } finally {
-      setIsLoading(false);
+      if (isMountedRef.current) {
+        setIsLoading(false);
+      }
     }
   }, [selectedZoneId]);
 

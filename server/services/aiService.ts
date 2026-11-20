@@ -218,19 +218,22 @@ Rules:
 }
 `;
 
-      const timeoutPromise = new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error('Gemini API call timed out after 10000ms')), 10000)
-      );
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000);
 
-      const generatePromise = genAIClient.models.generateContent({
-        model: modelName,
-        contents: prompt,
-        config: {
-          responseMimeType: 'application/json'
-        }
-      });
-
-      const response = await Promise.race([generatePromise, timeoutPromise]);
+      let response;
+      try {
+        response = await genAIClient.models.generateContent({
+          model: modelName,
+          contents: prompt,
+          config: {
+            responseMimeType: 'application/json',
+            abortSignal: controller.signal
+          }
+        });
+      } finally {
+        clearTimeout(timeoutId);
+      }
       const responseText = response.text?.trim() || '{}';
       const parsedJson = JSON.parse(responseText);
 
@@ -346,19 +349,22 @@ Rules:
 }
 `;
 
-      const timeoutPromise = new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error('Gemini API call timed out after 10000ms')), 10000)
-      );
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000);
 
-      const generatePromise = genAIClient.models.generateContent({
-        model: modelName,
-        contents: prompt,
-        config: {
-          responseMimeType: 'application/json'
-        }
-      });
-
-      const response = await Promise.race([generatePromise, timeoutPromise]);
+      let response;
+      try {
+        response = await genAIClient.models.generateContent({
+          model: modelName,
+          contents: prompt,
+          config: {
+            responseMimeType: 'application/json',
+            abortSignal: controller.signal
+          }
+        });
+      } finally {
+        clearTimeout(timeoutId);
+      }
       const responseText = response.text?.trim() || '{}';
       const parsedJson = JSON.parse(responseText);
 

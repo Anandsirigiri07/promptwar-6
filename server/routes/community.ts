@@ -132,8 +132,11 @@ communityRouter.post(
         return;
       }
 
-      // 3. Idempotency / Duplicate submission check
-      const idempotencyKey = `${userId}:${pledgeId}:${unitsCompleted}`;
+      // 3. Durable Idempotency / Duplicate submission check
+      const clientKey = (req.headers['x-idempotency-key'] as string) ||
+                        (req.headers['idempotency-key'] as string) ||
+                        (req.body as any).idempotencyKey;
+      const idempotencyKey = clientKey || `${userId}:${pledgeId}:${unitsCompleted}`;
       const lastLoggedAt = idempotencyCache.get(idempotencyKey);
       const now = Date.now();
 
@@ -160,7 +163,8 @@ communityRouter.post(
         userId,
         pledgeId,
         unitsCompleted,
-        notes
+        notes,
+        idempotencyKey
       });
 
       if (!result) {
@@ -171,7 +175,9 @@ communityRouter.post(
         return;
       }
 
-      res.status(201).json({
+      const statusCode = result.isDuplicate ? 200 : 201;
+
+      res.status(statusCode).json({
         success: true,
         data: {
           actionId: result.actionId,
@@ -179,8 +185,11 @@ communityRouter.post(
           unitsCompleted,
           status: result.status,
           updatedPledge: result.updatedPledge,
+          isDuplicate: result.isDuplicate ?? false,
           loggedAt: new Date().toISOString(),
-          message: `Successfully logged ${unitsCompleted} self-reported community environmental action(s).`
+          message: result.isDuplicate
+            ? `Idempotent replay: action previously processed without re-incrementing totals.`
+            : `Successfully logged ${unitsCompleted} self-reported community environmental action(s).`
         }
       });
     } catch (err) {

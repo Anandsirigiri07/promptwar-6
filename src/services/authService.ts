@@ -61,36 +61,19 @@ export const authService = {
 
   async signIn(email: string, password = ''): Promise<UserAccount> {
     if (isFirebaseLiveConfigured && auth) {
-      try {
-        const cred = await signInWithEmailAndPassword(auth, email, password);
-        const token = await cred.user.getIdToken();
-        const user: UserAccount = {
-          uid: cred.user.uid,
-          email: cred.user.email || email,
-          displayName: cred.user.displayName || email.split('@')[0] || 'User',
-          isDemoUser: false,
-          avatarSeed: 'emerald'
-        };
-        storageService.set('user_session', user);
-        storageService.set('vayuwise_auth_token', token);
-        storageService.remove('vayuwise_demo_active');
-        return user;
-      } catch {
-        // If sign-in fails or user doesn't exist, attempt sign-up
-        const cred = await createUserWithEmailAndPassword(auth, email, password);
-        const token = await cred.user.getIdToken();
-        const user: UserAccount = {
-          uid: cred.user.uid,
-          email: cred.user.email || email,
-          displayName: email.split('@')[0] || 'User',
-          isDemoUser: false,
-          avatarSeed: 'emerald'
-        };
-        storageService.set('user_session', user);
-        storageService.set('vayuwise_auth_token', token);
-        storageService.remove('vayuwise_demo_active');
-        return user;
-      }
+      const cred = await signInWithEmailAndPassword(auth, email, password);
+      const token = await cred.user.getIdToken();
+      const user: UserAccount = {
+        uid: cred.user.uid,
+        email: cred.user.email || email,
+        displayName: cred.user.displayName || email.split('@')[0] || 'User',
+        isDemoUser: false,
+        avatarSeed: 'emerald'
+      };
+      storageService.set('user_session', user);
+      storageService.set('vayuwise_auth_token', token);
+      storageService.remove('vayuwise_demo_active');
+      return user;
     }
 
     // Transparent Demo Mode (Clearly labelled, zero cloud claim)
@@ -98,6 +81,37 @@ export const authService = {
       uid: `demo-user-${Date.now()}`,
       email,
       displayName: email.split('@')[0] || 'Demo User',
+      isDemoUser: true,
+      avatarSeed: 'emerald'
+    };
+    storageService.set('user_session', user);
+    storageService.set('vayuwise_auth_token', 'demo-token');
+    storageService.set('vayuwise_demo_active', 'true');
+    return user;
+  },
+
+  async signUp(email: string, password = '', displayName = ''): Promise<UserAccount> {
+    if (isFirebaseLiveConfigured && auth) {
+      const cred = await createUserWithEmailAndPassword(auth, email, password);
+      const token = await cred.user.getIdToken();
+      const user: UserAccount = {
+        uid: cred.user.uid,
+        email: cred.user.email || email,
+        displayName: displayName || email.split('@')[0] || 'User',
+        isDemoUser: false,
+        avatarSeed: 'emerald'
+      };
+      storageService.set('user_session', user);
+      storageService.set('vayuwise_auth_token', token);
+      storageService.remove('vayuwise_demo_active');
+      return user;
+    }
+
+    // Demo Mode registration
+    const user: UserAccount = {
+      uid: `demo-user-${Date.now()}`,
+      email,
+      displayName: displayName || email.split('@')[0] || 'Demo User',
       isDemoUser: true,
       avatarSeed: 'emerald'
     };

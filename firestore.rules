@@ -33,16 +33,24 @@ service cloud.firestore {
     }
     
     // Community public read, authenticated pledge creation
+    // Direct client mutation of counters (completedCount, estimatedCO2SavingsKg) is strictly disallowed
     match /communityPledges/{pledgeId} {
       allow read: if true;
       allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
-      allow update: if isAuthenticated() && resource.data.userId == request.auth.uid;
-      allow delete: if false; // Pledges are immutable once completed or deleted only by admin
+      // Allow user to edit only descriptive text, never counters or aggregate impacts
+      allow update: if isAuthenticated() && 
+                    resource.data.userId == request.auth.uid &&
+                    request.resource.data.completedCount == resource.data.completedCount &&
+                    request.resource.data.estimatedCO2SavingsKg == resource.data.estimatedCO2SavingsKg &&
+                    request.resource.data.estimatedPM25AvoidedGrams == resource.data.estimatedPM25AvoidedGrams &&
+                    request.resource.data.participants == resource.data.participants;
+      allow delete: if false; // Pledges are immutable once completed
     }
     
-    // Community verified action logs
+    // Community action logs: private to the owner who logged the action
+    // Public reads of action logs are prohibited to protect personal notes and user IDs
     match /communityActions/{actionId} {
-      allow read: if true;
+      allow read: if isAuthenticated() && (resource.data.userId == request.auth.uid);
       allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
       allow update, delete: if false; // Actions are append-only audit trail
     }
@@ -51,6 +59,11 @@ service cloud.firestore {
     match /communityAggregates/{aggregateId} {
       allow read: if true;
       allow write: if false; // Direct client modification disallowed to prevent fraudulent inflation
+    }
+
+    // Idempotency keys are server-managed only
+    match /idempotencyKeys/{keyId} {
+      allow read, write: if false;
     }
     
     // Default deny all other unspecified collections

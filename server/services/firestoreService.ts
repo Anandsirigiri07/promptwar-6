@@ -14,6 +14,11 @@ let firestoreDb: admin.firestore.Firestore | null = null;
 
 // Fallback in-memory store for evaluation when Firebase service account is omitted
 const inMemoryPledges = new Map<string, CommunityPledgeRecord>();
+const inMemoryIdempotencyKeys = new Map<string, {
+  actionId: string;
+  updatedPledge: CommunityPledgeRecord;
+  status: 'self_reported';
+}>();
 const inMemoryActions: Array<{
   id: string;
   userId: string;
@@ -140,16 +145,37 @@ export async function logCommunityAction(action: {
   pledgeId: string;
   unitsCompleted: number;
   notes?: string;
+  idempotencyKey?: string;
 }): Promise<{
   actionId: string;
   updatedPledge: CommunityPledgeRecord;
   status: 'self_reported';
+  isDuplicate?: boolean;
 } | null> {
   if (firestoreDb) {
     const pledgeRef = firestoreDb.collection('communityPledges').doc(action.pledgeId);
     const actionRef = firestoreDb.collection('communityActions').doc(action.id);
+    const idempotencyRef = action.idempotencyKey
+      ? firestoreDb.collection('idempotencyKeys').doc(action.idempotencyKey)
+      : null;
 
     return await firestoreDb.runTransaction(async (transaction) => {
+      // 1. Check idempotency record within transaction
+      if (idempotencyRef) {
+        const idempDoc = await transaction.get(idempotencyRef);
+        if (idempDoc.exists) {
+          const cached = idempDoc.data() as {
+            actionId: string;
+            updatedPledge: CommunityPledgeRecord;
+            status: 'self_reported';
+          };
+          return {
+            ...cached,
+            isDuplicate: true
+          };
+        }
+      }
+
       const pledgeDoc = await transaction.get(pledgeRef);
       if (!pledgeDoc.exists) {
         return null;
@@ -181,13 +207,34 @@ export async function logCommunityAction(action: {
         estimatedPM25AvoidedGrams: updatedPledge.estimatedPM25AvoidedGrams
       });
 
+      if (idempotencyRef) {
+        transaction.set(idempotencyRef, {
+          actionId: action.id,
+          pledgeId: action.pledgeId,
+          userId: action.userId,
+          unitsCompleted: action.unitsCompleted,
+          updatedPledge,
+          createdAt: new Date().toISOString()
+        });
+      }
+
       return {
         actionId: action.id,
         updatedPledge,
-        status: 'self_reported' as const
+        status: 'self_reported' as const,
+        isDuplicate: false
       };
     });
   } else {
+    // In-Memory Idempotency check for demo mode
+    if (action.idempotencyKey && inMemoryIdempotencyKeys.has(action.idempotencyKey)) {
+      const cached = inMemoryIdempotencyKeys.get(action.idempotencyKey)!;
+      return {
+        ...cached,
+        isDuplicate: true
+      };
+    }
+
     const pledge = inMemoryPledges.get(action.pledgeId);
     if (!pledge) {
       return null;
@@ -205,10 +252,21 @@ export async function logCommunityAction(action: {
       createdAt: new Date().toISOString()
     });
 
-    return {
+    const result = {
       actionId: action.id,
       updatedPledge: { ...pledge },
-      status: 'self_reported' as const
+      status: 'self_reported' as const,
+      isDuplicate: false
     };
+
+    if (action.idempotencyKey) {
+      inMemoryIdempotencyKeys.set(action.idempotencyKey, {
+        actionId: action.id,
+        updatedPledge: { ...pledge },
+        status: 'self_reported'
+      });
+    }
+
+    return result;
   }
 }
