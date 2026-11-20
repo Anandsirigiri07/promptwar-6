@@ -3,9 +3,9 @@
  * Implements strict CSP via Helmet and granular CORS origin control.
  */
 
-import { Request, Response, NextFunction } from 'express';
+import type { Request, Response, NextFunction } from 'express';
 import helmet from 'helmet';
-import cors, { CorsOptions } from 'cors';
+import cors, { type CorsOptions } from 'cors';
 import { logger } from '../utils/logger.js';
 
 export function configureSecurityHeaders() {

@@ -4,9 +4,13 @@
  * Transparently falls back to Demo Mode when unconfigured so evaluators can test instantly.
  */
 
-import { initializeApp, getApps, FirebaseApp } from 'firebase/app';
-import { getAuth, Auth } from 'firebase/auth';
-import { getFirestore, Firestore } from 'firebase/firestore';
+import { initializeApp, getApps, type FirebaseApp } from 'firebase/app';
+import { getAuth, type Auth } from 'firebase/auth';
+import { getFirestore, type Firestore } from 'firebase/firestore';
+
+let app: FirebaseApp | null = null;
+let auth: Auth | null = null;
+let firestore: Firestore | null = null;
 
 const rawApiKey = import.meta.env.VITE_FIREBASE_API_KEY;
 const isConfigured = Boolean(
@@ -16,7 +20,7 @@ const isConfigured = Boolean(
   !rawApiKey.includes('your_client_api_key')
 );
 
-if (isConfigured) {
+if (isConfigured && rawApiKey) {
   try {
     const firebaseConfig = {
       apiKey: rawApiKey,

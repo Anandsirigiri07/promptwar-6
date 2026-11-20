@@ -1,10 +1,10 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { Request, Response, NextFunction } from 'express';
+import type { Request, Response, NextFunction } from 'express';
 import { getHealthStatus } from '../../server/routes/health.js';
 import { AirQualityProvider } from '../../server/services/airQualityProvider.js';
 import { calculateCommuteDose } from '../../src/lib/compute/commuteDose.js';
 import { calculateRoomIAQ } from '../../src/lib/compute/cadrCalculations.js';
-import { requireAuth, AuthenticatedRequest } from '../../server/middleware/authentication.js';
+import { requireAuth, type AuthenticatedRequest } from '../../server/middleware/authentication.js';
 import { errorHandler } from '../../server/middleware/errorHandler.js';
 import { AIService } from '../../server/services/aiService.js';
 import { getCommunityPledgeById, logCommunityAction } from '../../server/services/firestoreService.js';
@@ -121,8 +121,10 @@ describe('Backend API Route & Middleware Unit Tests (In-Memory)', () => {
   });
 
   it('requireAuth rejects missing or malformed Authorization header with 401', async () => {
-    let statusCode = 200;
-    let jsonResult: any = null;
+    const captured: { statusCode: number; jsonResult: { success?: boolean; error?: string } | null } = {
+      statusCode: 200,
+      jsonResult: null
+    };
 
     const req = {
       headers: {}
@@ -130,10 +132,10 @@ describe('Backend API Route & Middleware Unit Tests (In-Memory)', () => {
 
     const res = {
       status: (code: number) => {
-        statusCode = code;
+        captured.statusCode = code;
         return {
-          json: (data: any) => {
-            jsonResult = data;
+          json: (data: { success?: boolean; error?: string }) => {
+            captured.jsonResult = data;
           }
         };
       }
@@ -142,23 +144,25 @@ describe('Backend API Route & Middleware Unit Tests (In-Memory)', () => {
     const next = vi.fn();
     await requireAuth(req, res, next);
 
-    expect(statusCode).toBe(401);
-    expect(jsonResult.success).toBe(false);
-    expect(jsonResult.error).toContain('Missing or malformed Authorization header');
+    expect(captured.statusCode).toBe(401);
+    expect(captured.jsonResult?.success).toBe(false);
+    expect(captured.jsonResult?.error).toContain('Missing or malformed Authorization header');
     expect(next).not.toHaveBeenCalled();
   });
 
   it('errorHandler responds with HTTP 413 for payload size limit breaches', () => {
-    let statusCode = 200;
-    let jsonResult: any = null;
+    const captured: { statusCode: number; jsonResult: { success?: boolean; error?: string } | null } = {
+      statusCode: 200,
+      jsonResult: null
+    };
 
     const req = { method: 'POST', path: '/api/commute/compare' } as unknown as Request;
     const res = {
       status: (code: number) => {
-        statusCode = code;
+        captured.statusCode = code;
         return {
-          json: (data: any) => {
-            jsonResult = data;
+          json: (data: { success?: boolean; error?: string }) => {
+            captured.jsonResult = data;
           }
         };
       }
@@ -167,22 +171,24 @@ describe('Backend API Route & Middleware Unit Tests (In-Memory)', () => {
     const err = { type: 'entity.too.large', status: 413 };
     errorHandler(err, req, res, (() => {}) as NextFunction);
 
-    expect(statusCode).toBe(413);
-    expect(jsonResult.success).toBe(false);
-    expect(jsonResult.error).toContain('Payload too large');
+    expect(captured.statusCode).toBe(413);
+    expect(captured.jsonResult?.success).toBe(false);
+    expect(captured.jsonResult?.error).toContain('Payload too large');
   });
 
   it('errorHandler redacts bearer tokens and secrets from error logs', () => {
-    let statusCode = 200;
-    let jsonResult: any = null;
+    const captured: { statusCode: number; jsonResult: { success?: boolean; error?: string } | null } = {
+      statusCode: 200,
+      jsonResult: null
+    };
 
     const req = { method: 'GET', path: '/api/secure' } as unknown as Request;
     const res = {
       status: (code: number) => {
-        statusCode = code;
+        captured.statusCode = code;
         return {
-          json: (data: any) => {
-            jsonResult = data;
+          json: (data: { success?: boolean; error?: string }) => {
+            captured.jsonResult = data;
           }
         };
       }
@@ -191,10 +197,10 @@ describe('Backend API Route & Middleware Unit Tests (In-Memory)', () => {
     const sensitiveErr = new Error('Database failed with auth token Bearer secret_token_12345');
     errorHandler(sensitiveErr, req, res, (() => {}) as NextFunction);
 
-    expect(statusCode).toBe(500);
-    expect(jsonResult.success).toBe(false);
+    expect(captured.statusCode).toBe(500);
+    expect(captured.jsonResult?.success).toBe(false);
     // Client receives generic message on 500
-    expect(jsonResult.error).toContain('An unexpected server error occurred');
+    expect(captured.jsonResult?.error).toContain('An unexpected server error occurred');
   });
 
   it('AIService generates deterministic routine and emergency advisory without Gemini API key', async () => {

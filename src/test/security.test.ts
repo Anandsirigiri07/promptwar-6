@@ -1,10 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import { z } from 'zod';
-import { Request, Response } from 'express';
+import type { Request, Response } from 'express';
 import { sanitizeUserInput, sanitizeTextObject } from '../../server/utils/sanitize.js';
 import { BoundedTTLLRUCache } from '../../server/services/cacheService.js';
 import { validateBody, validateQuery } from '../../server/middleware/validation.js';
-import { configureCORS, configureSecurityHeaders } from '../../server/middleware/security.js';
+import { configureCORS, configureSecurityHeaders, requestSizeLimit } from '../../server/middleware/security.js';
 import { standardApiLimiter, aiEndpointLimiter } from '../../server/middleware/rateLimit.js';
 
 describe('Application Security: Sanitization & LRU Bounded Cache', () => {
@@ -106,19 +106,21 @@ describe('Middleware Unit Tests: Validation, Security Headers, CORS, Rate Limiti
     const middleware = validateBody(schema);
 
     const req = { body: { city: 'X' }, path: '/api/test' } as unknown as Request;
-    let statusCode = 0;
-    let responseBody: any = null;
+    const captured: { statusCode: number; body: { success?: boolean; error?: string } | null } = {
+      statusCode: 0,
+      body: null
+    };
     const res = {
-      status: (code: number) => { statusCode = code; return res; },
-      json: (data: any) => { responseBody = data; return res; }
+      status: (code: number) => { captured.statusCode = code; return res; },
+      json: (data: { success?: boolean; error?: string }) => { captured.body = data; return res; }
     } as unknown as Response;
     let nextCalled = false;
     const next = () => { nextCalled = true; };
 
     middleware(req, res, next);
     expect(nextCalled).toBe(false);
-    expect(statusCode).toBe(400);
-    expect(responseBody.success).toBe(false);
+    expect(captured.statusCode).toBe(400);
+    expect(captured.body?.success).toBe(false);
   });
 
   it('validateQuery passes valid query to next() and safely mutates req.query', () => {
@@ -126,13 +128,14 @@ describe('Middleware Unit Tests: Validation, Security Headers, CORS, Rate Limiti
     const middleware = validateQuery(schema);
 
     const req = { query: { city: 'Bengaluru' }, path: '/api/query' } as unknown as Request;
-    const res = { locals: {} } as unknown as Response;
+    const locals: { validatedQuery?: unknown } = {};
+    const res = { locals } as unknown as Response;
     let nextCalled = false;
     const next = () => { nextCalled = true; };
 
     middleware(req, res, next);
     expect(nextCalled).toBe(true);
-    expect((res.locals as any).validatedQuery).toEqual({ city: 'Bengaluru' });
+    expect(locals.validatedQuery).toEqual({ city: 'Bengaluru' });
   });
 
   it('validateQuery rejects invalid query parameters with 400', () => {
@@ -162,6 +165,39 @@ describe('Middleware Unit Tests: Validation, Security Headers, CORS, Rate Limiti
   it('configureCORS correctly evaluates allowed and disallowed origins', () => {
     const corsMiddleware = configureCORS();
     expect(typeof corsMiddleware).toBe('function');
+  });
+
+  it('requestSizeLimit allows payloads under size threshold', () => {
+    const limiter = requestSizeLimit(1024);
+    const req = { headers: { 'content-length': '512' } } as unknown as Request;
+    const res = {} as unknown as Response;
+    let nextCalled = false;
+    limiter(req, res, () => { nextCalled = true; });
+    expect(nextCalled).toBe(true);
+  });
+
+  it('requestSizeLimit blocks payloads exceeding size threshold with HTTP 413', () => {
+    const limiter = requestSizeLimit(1024);
+    const req = { headers: { 'content-length': '2048' } } as unknown as Request;
+    const captured: { statusCode: number; jsonResult: { success?: boolean; error?: string } | null } = {
+      statusCode: 0,
+      jsonResult: null
+    };
+    const res = {
+      status: (code: number) => {
+        captured.statusCode = code;
+        return {
+          json: (data: { success?: boolean; error?: string }) => {
+            captured.jsonResult = data;
+          }
+        };
+      }
+    } as unknown as Response;
+    let nextCalled = false;
+    limiter(req, res, () => { nextCalled = true; });
+    expect(nextCalled).toBe(false);
+    expect(captured.statusCode).toBe(413);
+    expect(captured.jsonResult?.success).toBe(false);
   });
 
   it('rate limiters are initialized with expected properties', () => {
