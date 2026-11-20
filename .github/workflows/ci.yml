@@ -28,6 +28,29 @@ jobs:
       - name: Install Verified Dependencies
         run: npm ci
 
+      - name: Dependency Security Audit
+        continue-on-error: true
+        run: |
+          npm audit --json > npm-audit.json || true
+          node <<'NODE'
+          const fs = require('node:fs');
+          let report;
+          try {
+            report = JSON.parse(fs.readFileSync('npm-audit.json', 'utf8'));
+          } catch {
+            console.log('Dependency audit did not return valid JSON. Check npm registry connectivity.');
+            process.exit(0);
+          }
+          console.log('Dependency advisory totals:', JSON.stringify(report.metadata?.vulnerabilities ?? {}));
+          for (const [name, advisory] of Object.entries(report.vulnerabilities ?? {})) {
+            const titles = (advisory.via ?? [])
+              .filter(item => typeof item === 'object')
+              .map(item => item.title)
+              .join('; ');
+            console.log(`[${advisory.severity}] ${name} | direct=${advisory.isDirect} | range=${advisory.range} | fix=${JSON.stringify(advisory.fixAvailable)} | ${titles}`);
+          }
+          NODE
+
       - name: TypeScript Static Typecheck
         run: npm run typecheck
 
