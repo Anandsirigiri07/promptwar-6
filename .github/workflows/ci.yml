@@ -31,6 +31,8 @@ jobs:
       - name: Install Verified Dependencies
         run: |
           if [ "${GITHUB_REF}" = "refs/heads/security/dependency-upgrade" ]; then
+            npm install --global npm@11
+            npm --version
             rm -f package-lock.json
             npm install --package-lock-only --ignore-scripts
           fi
