@@ -208,7 +208,7 @@ describe('Backend API Route & Middleware Unit Tests (In-Memory)', () => {
   });
 
   it('AIService generates deterministic routine and emergency advisory without Gemini API key', async () => {
-    // 1. Without physical PM2.5, dose reduction is honestly unavailable (never inferred from AQI alone)
+    // 1. Without physical PM2.5, daily dose is not calculated without person-specific inputs (never inferred from AQI alone)
     const routineNoPM25 = AIService.generateDeterministicRoutine({
       persona: 'child',
       city: 'Delhi',
@@ -222,7 +222,7 @@ describe('Backend API Route & Middleware Unit Tests (In-Memory)', () => {
     expect(routineNoPM25.generatedBy).toBe('Deterministic Environmental Health Engine');
     expect(routineNoPM25.schedule.length).toBeGreaterThanOrEqual(3);
     expect(routineNoPM25.estimatedTotalDoseReductionUg).toBeNull();
-    expect(routineNoPM25.doseReductionExplanation).toContain('unavailable');
+    expect(routineNoPM25.doseReductionExplanation).toContain('not calculated');
 
     // 2. A concentration alone is insufficient for a defensible personalized daily total
     const routineWithPM25 = AIService.generateDeterministicRoutine({
