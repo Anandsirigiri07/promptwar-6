@@ -7,7 +7,7 @@
 
 import { cert, initializeApp, type App } from 'firebase-admin/app';
 import { getAuth, type Auth } from 'firebase-admin/auth';
-import { getFirestore, type Firestore } from 'firebase-admin/firestore';
+import { getFirestore as getAdminFirestore, type Firestore } from 'firebase-admin/firestore';
 import { logger } from '../utils/logger.js';
 import { CommunityPledgeRecord, calculatePledgeAvoidedEmissions } from '../../src/lib/compute/communityImpact.js';
 
@@ -92,7 +92,7 @@ export function initializeFirebaseAdmin(): void {
           privateKey
         })
       });
-      firestoreDb = getFirestore(adminApp);
+      firestoreDb = getAdminFirestore(adminApp);
       logger.info('Firebase Admin and Firestore initialized successfully');
     } catch (err) {
       logger.warn('Failed to initialize Firebase Admin with provided credentials, falling back to Demo Mode', { error: String(err) });
