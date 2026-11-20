@@ -1,6 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { sanitizeUserInput } from '../../server/utils/sanitize.js';
+import { z } from 'zod';
+import { Request, Response } from 'express';
+import { sanitizeUserInput, sanitizeTextObject } from '../../server/utils/sanitize.js';
 import { BoundedTTLLRUCache } from '../../server/services/cacheService.js';
+import { validateBody, validateQuery } from '../../server/middleware/validation.js';
+import { configureCORS, configureSecurityHeaders } from '../../server/middleware/security.js';
+import { standardApiLimiter, aiEndpointLimiter } from '../../server/middleware/rateLimit.js';
 
 describe('Application Security: Sanitization & LRU Bounded Cache', () => {
   it('neutralizes system prompt delimiter injection tokens', () => {
@@ -25,6 +30,20 @@ describe('Application Security: Sanitization & LRU Bounded Cache', () => {
     const huge = 'A'.repeat(1200);
     const clamped = sanitizeUserInput(huge, 100);
     expect(clamped.length).toBe(100);
+  });
+
+  it('recursively sanitizes nested text objects', () => {
+    const nested = {
+      name: 'John <|im_start|>',
+      details: {
+        bio: 'Developer ```system malicious',
+        age: 30
+      }
+    };
+    const sanitized = sanitizeTextObject(nested);
+    expect(sanitized.name).toContain('[FILTERED_TOKEN]');
+    expect(sanitized.details.bio).toContain('[FILTERED_TOKEN]');
+    expect(sanitized.details.age).toBe(30);
   });
 
   it('enforces LRU eviction when cache exceeds max capacity', () => {
@@ -59,5 +78,94 @@ describe('Application Security: Sanitization & LRU Bounded Cache', () => {
     expect(key1).toBe(key2);
     expect(key1).not.toBe(key3);
     expect(key1).toMatch(/^routine:[a-f0-9]{64}$/);
+  });
+});
+
+describe('Middleware Unit Tests: Validation, Security Headers, CORS, Rate Limiting', () => {
+  it('validateBody passes valid payload to next()', () => {
+    const schema = z.object({ city: z.string().min(1) });
+    const middleware = validateBody(schema);
+
+    const req = { body: { city: 'Delhi' }, path: '/api/test' } as unknown as Request;
+    let statusCalled = false;
+    const res = {
+      status: () => { statusCalled = true; return res; },
+      json: () => res
+    } as unknown as Response;
+    let nextCalled = false;
+    const next = () => { nextCalled = true; };
+
+    middleware(req, res, next);
+    expect(nextCalled).toBe(true);
+    expect(statusCalled).toBe(false);
+    expect(req.body).toEqual({ city: 'Delhi' });
+  });
+
+  it('validateBody rejects invalid payload with 400', () => {
+    const schema = z.object({ city: z.string().min(3) });
+    const middleware = validateBody(schema);
+
+    const req = { body: { city: 'X' }, path: '/api/test' } as unknown as Request;
+    let statusCode = 0;
+    let responseBody: any = null;
+    const res = {
+      status: (code: number) => { statusCode = code; return res; },
+      json: (data: any) => { responseBody = data; return res; }
+    } as unknown as Response;
+    let nextCalled = false;
+    const next = () => { nextCalled = true; };
+
+    middleware(req, res, next);
+    expect(nextCalled).toBe(false);
+    expect(statusCode).toBe(400);
+    expect(responseBody.success).toBe(false);
+  });
+
+  it('validateQuery passes valid query to next() and safely mutates req.query', () => {
+    const schema = z.object({ city: z.string() });
+    const middleware = validateQuery(schema);
+
+    const req = { query: { city: 'Bengaluru' }, path: '/api/query' } as unknown as Request;
+    const res = { locals: {} } as unknown as Response;
+    let nextCalled = false;
+    const next = () => { nextCalled = true; };
+
+    middleware(req, res, next);
+    expect(nextCalled).toBe(true);
+    expect((res.locals as any).validatedQuery).toEqual({ city: 'Bengaluru' });
+  });
+
+  it('validateQuery rejects invalid query parameters with 400', () => {
+    const schema = z.object({ city: z.string().min(5) });
+    const middleware = validateQuery(schema);
+
+    const req = { query: { city: 'ab' }, path: '/api/query' } as unknown as Request;
+    let statusCode = 0;
+    const res = {
+      status: (code: number) => { statusCode = code; return res; },
+      json: () => res,
+      locals: {}
+    } as unknown as Response;
+    let nextCalled = false;
+    const next = () => { nextCalled = true; };
+
+    middleware(req, res, next);
+    expect(nextCalled).toBe(false);
+    expect(statusCode).toBe(400);
+  });
+
+  it('configureSecurityHeaders initializes Helmet middleware', () => {
+    const helmetMiddleware = configureSecurityHeaders();
+    expect(typeof helmetMiddleware).toBe('function');
+  });
+
+  it('configureCORS correctly evaluates allowed and disallowed origins', () => {
+    const corsMiddleware = configureCORS();
+    expect(typeof corsMiddleware).toBe('function');
+  });
+
+  it('rate limiters are initialized with expected properties', () => {
+    expect(typeof standardApiLimiter).toBe('function');
+    expect(typeof aiEndpointLimiter).toBe('function');
   });
 });

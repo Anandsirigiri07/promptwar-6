@@ -27,20 +27,28 @@ iaqRouter.post(
         targetACH
       });
 
-      // Sample weather for ventilation window calculation
+      // Dynamic weather and outdoor air quality derivation
+      const ambientAQI = req.body.outdoorAQI ?? 185;
       const weather: WeatherData = {
-        temperatureC: 18,
-        humidityPercent: 65,
-        windSpeedKmh: 7.5
+        temperatureC: req.body.temperatureC ?? 18,
+        humidityPercent: req.body.humidityPercent ?? 65,
+        windSpeedKmh: req.body.windSpeedKmh ?? 7.5
       };
 
-      const ventilationAdvice = evaluateVentilationWindow(185, weather);
+      const ventilationAdvice = evaluateVentilationWindow(ambientAQI, weather);
 
       res.json({
         success: true,
         data: {
           calculation: iaqResult,
           ventilationAdvice,
+          ventilationConditions: {
+            outdoorAQI: ambientAQI,
+            temperatureC: weather.temperatureC,
+            humidityPercent: weather.humidityPercent,
+            windSpeedKmh: weather.windSpeedKmh,
+            source: req.body.outdoorAQI !== undefined ? 'User / Live Outdoor Telemetry' : 'Calibrated Winter Baseline Reference'
+          },
           corsiRosenthalReference: CORSI_ROSENTHAL_REFERENCE
         }
       });

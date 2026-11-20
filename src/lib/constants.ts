@@ -74,10 +74,39 @@ export const SUPPORTED_PERSONAS: Record<PersonaType, PersonaProfile> = {
   }
 };
 
-export const URBAN_ZONES_DEFAULT = [
-  { id: 'zone-1', name: 'Central Commercial & Tech Corridor', city: 'Bengaluru / Delhi NCR', latitude: 28.6139, longitude: 77.2090 },
-  { id: 'zone-2', name: 'Industrial Hub & Logistics Zone', city: 'Bengaluru / Delhi NCR', latitude: 28.6500, longitude: 77.3000 },
-  { id: 'zone-3', name: 'Dense Residential & School District', city: 'Bengaluru / Delhi NCR', latitude: 28.5500, longitude: 77.1800 },
-  { id: 'zone-4', name: 'Green Ridge & Forest Foothills', city: 'Bengaluru / Delhi NCR', latitude: 28.5800, longitude: 77.1500 },
-  { id: 'zone-5', name: 'High-Density Traffic Intersection', city: 'Bengaluru / Delhi NCR', latitude: 28.6300, longitude: 77.2400 }
+export interface UrbanZoneDefinition {
+  id: string;
+  name: string;
+  city: string;
+  latitude: number;
+  longitude: number;
+}
+
+export const DELHI_ZONES: UrbanZoneDefinition[] = [
+  { id: 'zone-delhi-1', name: 'Connaught Place & Central Corridor', city: 'Delhi', latitude: 28.6315, longitude: 77.2167 },
+  { id: 'zone-delhi-2', name: 'Anand Vihar & Industrial Cluster', city: 'Delhi', latitude: 28.6469, longitude: 77.3160 },
+  { id: 'zone-delhi-3', name: 'RK Puram & Residential District', city: 'Delhi', latitude: 28.5660, longitude: 77.1767 },
+  { id: 'zone-delhi-4', name: 'Southern Ridge & Green Corridor', city: 'Delhi', latitude: 28.5200, longitude: 77.1600 },
+  { id: 'zone-delhi-5', name: 'ITO & Ring Road Congestion Junction', city: 'Delhi', latitude: 28.6289, longitude: 77.2406 }
 ];
+
+export const BENGALURU_ZONES: UrbanZoneDefinition[] = [
+  { id: 'zone-blr-1', name: 'MG Road & Central Tech District', city: 'Bengaluru', latitude: 12.9756, longitude: 77.6066 },
+  { id: 'zone-blr-2', name: 'Peenya Industrial & Logistics Area', city: 'Bengaluru', latitude: 13.0285, longitude: 77.5197 },
+  { id: 'zone-blr-3', name: 'Indiranagar & Residential Neighborhood', city: 'Bengaluru', latitude: 12.9784, longitude: 77.6408 },
+  { id: 'zone-blr-4', name: 'Cubbon Park & Botanical Green Belt', city: 'Bengaluru', latitude: 12.9763, longitude: 77.5929 },
+  { id: 'zone-blr-5', name: 'Silk Board & Outer Ring Road Transit Hub', city: 'Bengaluru', latitude: 12.9177, longitude: 77.6238 }
+];
+
+export const URBAN_ZONES_DEFAULT: UrbanZoneDefinition[] = DELHI_ZONES;
+
+export function getZonesForCity(city: string): UrbanZoneDefinition[] {
+  const normalized = city.toLowerCase();
+  if (normalized.includes('delhi') || normalized.includes('ncr')) {
+    return DELHI_ZONES;
+  }
+  if (normalized.includes('bengaluru') || normalized.includes('bangalore')) {
+    return BENGALURU_ZONES;
+  }
+  return DELHI_ZONES;
+}

@@ -42,7 +42,7 @@ export interface DailyPersonalizedRoutine {
   overallHealthRiskSummary: string;
   schedule: ActivityScheduleItem[];
   estimatedTotalDoseReductionUg: number;
-  generatedBy: 'Gemini-3.1-Flash-Lite' | 'Deterministic-Engine-Fallback';
+  generatedBy: string;
   generatedAt: string;
   isFallback: boolean;
 }

@@ -9,14 +9,23 @@ import cors, { CorsOptions } from 'cors';
 import { logger } from '../utils/logger.js';
 
 export function configureSecurityHeaders() {
+  const isProd = process.env.NODE_ENV === 'production';
   return helmet({
     contentSecurityPolicy: {
       directives: {
         defaultSrc: ["'self'"],
-        scriptSrc: ["'self'", "'unsafe-inline'"], // unsafe-inline only for Vite hot reload / injected script tags
-        styleSrc: ["'self'", "'unsafe-inline'"],
+        scriptSrc: isProd ? ["'self'"] : ["'self'", "'unsafe-inline'"],
+        styleSrc: ["'self'", "'unsafe-inline'"], // required for runtime Tailwind v4 injected theme variables
         imgSrc: ["'self'", 'data:', 'https:'],
-        connectSrc: ["'self'", 'https://identitytoolkit.googleapis.com', 'https://securetoken.googleapis.com', 'https://firestore.googleapis.com'],
+        connectSrc: [
+          "'self'",
+          'https://identitytoolkit.googleapis.com',
+          'https://securetoken.googleapis.com',
+          'https://firestore.googleapis.com',
+          'https://air-quality-api.open-meteo.com',
+          'https://api.open-meteo.com',
+          'https://api.openaq.org'
+        ],
         fontSrc: ["'self'", 'https:'],
         objectSrc: ["'none'"],
         mediaSrc: ["'self'"],

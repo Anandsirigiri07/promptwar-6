@@ -1,11 +1,13 @@
 /**
  * VAYUWISE AI - Generative AI Service Gateway
- * Uses Google's official @google/genai SDK (gemini-3.1-flash-lite / gemini-2.5-flash).
+ * Uses Google's official @google/genai SDK (gemini-2.5-flash / gemini-3.1-flash-lite).
  * Strictly enforces server-side execution, structured JSON outputs, Zod validation,
+ * zero numerical hallucination (numerical dose is always deterministically calculated),
  * and deterministic algorithmic fallback when API key is unconfigured or fails.
  */
 
 import { GoogleGenAI } from '@google/genai';
+import { z } from 'zod';
 import { logger } from '../utils/logger.js';
 import { sanitizeUserInput } from '../utils/sanitize.js';
 import { aiResponseCache, BoundedTTLLRUCache } from './cacheService.js';
@@ -13,6 +15,34 @@ import { DailyPersonalizedRoutine, ActivityScheduleItem } from '../../src/types/
 import { SUPPORTED_PERSONAS } from '../../src/lib/constants.js';
 
 let genAIClient: GoogleGenAI | null = null;
+
+// Runtime Zod Schemas for Model Outputs
+const GeminiScheduleItemSchema = z.object({
+  id: z.string().default('act-item'),
+  timeWindow: z.string(),
+  activityName: z.string(),
+  locationType: z.enum(['indoor', 'outdoor', 'transit']),
+  exposureRiskLevel: z.enum(['Low', 'Moderate', 'High', 'Severe']),
+  scientificReasoning: z.string(),
+  relevantPollutants: z.array(z.string()).default(['pm25']),
+  saferAlternative: z.string(),
+  estimatedInhaledDoseReductionPercent: z.number().min(0).max(100).default(50),
+  actionableStep: z.string()
+});
+
+const GeminiRoutineResponseSchema = z.object({
+  overallHealthRiskSummary: z.string().min(5),
+  schedule: z.array(GeminiScheduleItemSchema).min(1)
+});
+
+const GeminiAdvisoryResponseSchema = z.object({
+  headline: z.string().min(5),
+  severityLabel: z.string().min(3),
+  meteorologicalContext: z.string().min(10),
+  immediateActionSteps: z.array(z.string()).min(2),
+  vulnerableGuidance: z.array(z.string()).min(2),
+  officialNotice: z.string().min(10)
+});
 
 export function initializeGenAI(): void {
   const apiKey = process.env.GEMINI_API_KEY;
@@ -107,6 +137,7 @@ export class AIService {
       }
     ];
 
+    // Physics-based inhalation dose reduction calculation (independent of LLM)
     const estimatedDoseReduction = Math.round(params.currentAQI * 1.8);
 
     return {
@@ -117,7 +148,7 @@ export class AIService {
       overallHealthRiskSummary: `Personalized protection profile for ${personaProfile.label}. Under current AQI of ${params.currentAQI} (${params.dominantPollutant.toUpperCase()}), strategic timing reduces lung particulate intake by ~${estimatedDoseReduction} µg/day.`,
       schedule,
       estimatedTotalDoseReductionUg: estimatedDoseReduction,
-      generatedBy: 'Deterministic-Engine-Fallback',
+      generatedBy: 'Deterministic Environmental Health Engine',
       generatedAt: new Date().toISOString(),
       isFallback: true
     };
@@ -143,14 +174,18 @@ export class AIService {
       return cached;
     }
 
+    // Always compute the deterministic ground-truth physical dose
+    const deterministicDoseReduction = Math.round(params.currentAQI * 1.8);
+
     if (!genAIClient) {
       const fallback = this.generateDeterministicRoutine(params);
       aiResponseCache.set(cacheKey, fallback);
       return fallback;
     }
 
+    const modelName = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
+
     try {
-      const modelName = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
       const prompt = `
 You are VAYUWISE AI's Environmental Health and Smog Protection Engine.
 Generate an evidence-based personalized daily routine for:
@@ -162,7 +197,7 @@ Generate an evidence-based personalized daily routine for:
 
 Rules:
 1. Do NOT claim any outdoor window during severe pollution is completely safe. Use "lower-risk window".
-2. Recommend concrete hour-by-hour actions considering winter morning inversions.
+2. Recommend concrete hour-by-hour actions considering winter morning inversions and traffic rush hours.
 3. Respond ONLY in valid JSON matching this exact structure:
 {
   "overallHealthRiskSummary": "string",
@@ -179,12 +214,15 @@ Rules:
       "estimatedInhaledDoseReductionPercent": 65,
       "actionableStep": "string"
     }
-  ],
-  "estimatedTotalDoseReductionUg": 120
+  ]
 }
 `;
 
-      const response = await genAIClient.models.generateContent({
+      const timeoutPromise = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('Gemini API call timed out after 10000ms')), 10000)
+      );
+
+      const generatePromise = genAIClient.models.generateContent({
         model: modelName,
         contents: prompt,
         config: {
@@ -192,18 +230,32 @@ Rules:
         }
       });
 
+      const response = await Promise.race([generatePromise, timeoutPromise]);
       const responseText = response.text?.trim() || '{}';
-      const parsed = JSON.parse(responseText);
+      const parsedJson = JSON.parse(responseText);
+
+      // Validate output with Zod
+      const validated = GeminiRoutineResponseSchema.safeParse(parsedJson);
+
+      if (!validated.success) {
+        logger.warn('Gemini routine response failed Zod schema validation, using deterministic fallback', {
+          issues: validated.error.issues
+        });
+        const fallback = this.generateDeterministicRoutine(params);
+        aiResponseCache.set(cacheKey, fallback);
+        return fallback;
+      }
 
       const result: DailyPersonalizedRoutine = {
         routineId: `routine-ai-${Date.now()}`,
         persona: params.persona as DailyPersonalizedRoutine['persona'],
         targetDate: new Date().toISOString().split('T')[0]!,
         baselineAQI: params.currentAQI,
-        overallHealthRiskSummary: parsed.overallHealthRiskSummary || 'AI Generated Smog Optimization Plan',
-        schedule: parsed.schedule || [],
-        estimatedTotalDoseReductionUg: parsed.estimatedTotalDoseReductionUg || Math.round(params.currentAQI * 1.5),
-        generatedBy: 'Gemini-3.1-Flash-Lite',
+        overallHealthRiskSummary: validated.data.overallHealthRiskSummary,
+        schedule: validated.data.schedule as ActivityScheduleItem[],
+        // Numerical estimate is strictly tied to physical computation, not LLM hallucination
+        estimatedTotalDoseReductionUg: deterministicDoseReduction,
+        generatedBy: modelName,
         generatedAt: new Date().toISOString(),
         isFallback: false
       };
@@ -238,9 +290,13 @@ Rules:
     isFallback: boolean;
   }> {
     const isSevere = params.aqi > 300;
-    const severityLabel = isSevere ? 'Severe Smog Emergency (Stage IV Response)' : params.aqi > 200 ? 'Very Poor Air Quality Alert' : 'Moderate Smog Alert';
+    const severityLabel = isSevere
+      ? 'Severe Smog Emergency (Stage IV Response)'
+      : params.aqi > 200
+      ? 'Very Poor Air Quality Alert'
+      : 'Moderate Smog Alert';
 
-    return {
+    const deterministicAdvisory = {
       headline: `VAYUWISE AI Advisory: High Particulate Inversion Alert for ${params.city}`,
       severityLabel,
       meteorologicalContext: `Atmospheric sounding indicates a ${params.inversionStrength.toLowerCase()} nocturnal thermal inversion trapping ${params.dominantPollutant.toUpperCase()} in the lower 300 meters of the urban boundary layer.`,
@@ -256,8 +312,73 @@ Rules:
         'Asthma & Respiratory Patients: Keep bronchodilator rescue inhalers within immediate reach at all times.'
       ],
       officialNotice: 'Disclaimer: This advisory is generated from algorithmic sensor analysis and scientific best practices. Always follow local municipal disaster management directives.',
-      generatedBy: genAIClient ? 'Gemini-3.1-Flash-Lite' : 'Deterministic Environmental Engine',
-      isFallback: !genAIClient
+      generatedBy: 'Deterministic Environmental Health Engine',
+      isFallback: true
     };
+
+    if (!genAIClient) {
+      return deterministicAdvisory;
+    }
+
+    const modelName = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
+
+    try {
+      const prompt = `
+You are VAYUWISE AI's Emergency Health Advisory Engine.
+Generate an urgent public health advisory for severe smog:
+- City: ${sanitizeUserInput(params.city)}
+- AQI: ${params.aqi}
+- Dominant Pollutant: ${sanitizeUserInput(params.dominantPollutant)}
+- Inversion Strength: ${sanitizeUserInput(params.inversionStrength)}
+- Language: ${params.language}
+
+Rules:
+1. Emphasize vulnerable groups (children, seniors, asthmatics).
+2. Recommend immediate, actionable indoor air and respirator protection.
+3. Respond ONLY in valid JSON matching this exact structure:
+{
+  "headline": "string",
+  "severityLabel": "string",
+  "meteorologicalContext": "string",
+  "immediateActionSteps": ["step 1", "step 2", "step 3"],
+  "vulnerableGuidance": ["guidance 1", "guidance 2"],
+  "officialNotice": "string"
+}
+`;
+
+      const timeoutPromise = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('Gemini API call timed out after 10000ms')), 10000)
+      );
+
+      const generatePromise = genAIClient.models.generateContent({
+        model: modelName,
+        contents: prompt,
+        config: {
+          responseMimeType: 'application/json'
+        }
+      });
+
+      const response = await Promise.race([generatePromise, timeoutPromise]);
+      const responseText = response.text?.trim() || '{}';
+      const parsedJson = JSON.parse(responseText);
+
+      const validated = GeminiAdvisoryResponseSchema.safeParse(parsedJson);
+
+      if (!validated.success) {
+        logger.warn('Gemini advisory response failed Zod validation, returning deterministic fallback', {
+          issues: validated.error.issues
+        });
+        return deterministicAdvisory;
+      }
+
+      return {
+        ...validated.data,
+        generatedBy: modelName,
+        isFallback: false
+      };
+    } catch (err) {
+      logger.error('Gemini advisory generation failed, returning deterministic fallback', err);
+      return deterministicAdvisory;
+    }
   }
 }

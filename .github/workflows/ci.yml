@@ -1,0 +1,44 @@
+name: VAYUWISE AI CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  validate-and-test:
+    name: Build, Lint & Automated Test Suite
+    runs-on: ubuntu-latest
+
+    env:
+      NODE_ENV: test
+      PORT: 3001
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 22.x LTS
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+
+      - name: Install Verified Dependencies
+        run: npm ci
+
+      - name: TypeScript Static Typecheck
+        run: npm run typecheck
+
+      - name: Static Code Analysis & Linting (Oxlint)
+        run: npm run lint
+
+      - name: Unit & Integration Test Suite
+        run: npm run test:run
+
+      - name: Coverage Verification
+        run: npm run test:coverage
+
+      - name: Full Client & Server Production Build
+        run: npm run build

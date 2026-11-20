@@ -17,13 +17,17 @@ export const ProfilePage: React.FC = () => {
   const [emailInput, setEmailInput] = useState(currentUser?.email || '');
   const [, setSaveMessage] = useState(false);
 
-  const handleSignIn = (e: React.FormEvent) => {
+  const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!emailInput.trim()) return;
-    const user = authService.signIn(emailInput.trim());
-    setCurrentUser(user);
-    setSaveMessage(true);
-    setTimeout(() => setSaveMessage(false), 2000);
+    try {
+      const user = await authService.signIn(emailInput.trim());
+      setCurrentUser(user);
+      setSaveMessage(true);
+      setTimeout(() => setSaveMessage(false), 2000);
+    } catch (err) {
+      console.warn('Sign in error', err);
+    }
   };
 
   const handleDemoSignIn = () => {
@@ -79,7 +83,7 @@ export const ProfilePage: React.FC = () => {
                 : 'bg-emerald-50 text-emerald-800 border-emerald-300'
             }`}
           >
-            {currentUser?.isDemoUser ? 'Transparent Demo Mode' : 'Cloud Verified'}
+            {currentUser?.isDemoUser ? 'Demo Mode (Local Persistence)' : 'Firebase Authenticated'}
           </span>
         </div>
 

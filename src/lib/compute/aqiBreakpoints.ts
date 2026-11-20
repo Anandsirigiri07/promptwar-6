@@ -153,28 +153,58 @@ export const EPA_BREAKPOINTS: Record<PollutantType, BreakpointRange[]> = {
   ]
 };
 
+/**
+ * Normalizes pollutant concentration per standard-specific precision rules:
+ * - CPCB: PM2.5, PM10, NO2, SO2, O3 rounded to nearest integer; CO to 1 decimal place.
+ * - US EPA: PM2.5 to 1 decimal place (truncated); PM10, NO2, SO2, O3 truncated to integer; CO to 1 decimal place.
+ */
+export function normalizeConcentration(
+  pollutant: PollutantType,
+  rawConcentration: number,
+  standard: AQIStandard = 'CPCB'
+): number {
+  const conc = assertFiniteNumber(rawConcentration, `concentration of ${pollutant}`, 0, 5000);
+
+  if (standard === 'CPCB') {
+    if (pollutant === 'co') {
+      return Math.round(conc * 10) / 10;
+    }
+    return Math.round(conc);
+  } else {
+    // US EPA truncation rules
+    if (pollutant === 'pm25' || pollutant === 'co') {
+      return Math.floor(conc * 10) / 10;
+    }
+    return Math.floor(conc);
+  }
+}
+
 export function calculateSubIndex(
   pollutant: PollutantType,
   rawConcentration: number,
   standard: AQIStandard = 'CPCB'
 ): number {
-  const concentration = assertFiniteNumber(rawConcentration, `concentration of ${pollutant}`, 0, 5000);
+  const concentration = normalizeConcentration(pollutant, rawConcentration, standard);
   const breakpoints = (standard === 'CPCB' ? CPCB_BREAKPOINTS : EPA_BREAKPOINTS)[pollutant];
 
   if (!breakpoints || breakpoints.length === 0) {
     throw new Error(`Unsupported pollutant: ${pollutant}`);
   }
 
-  // Linear piecewise search
-  for (const bp of breakpoints) {
-    if (concentration >= bp.cLow && concentration <= bp.cHigh) {
+  // Exact piecewise search across breakpoints
+  for (let i = 0; i < breakpoints.length; i++) {
+    const bp = breakpoints[i]!;
+    // For CPCB and EPA, check if concentration falls in or between this range
+    // If concentration is between previous bp.cHigh and this bp.cLow, it belongs to this range
+    const lowerBound = i === 0 ? 0 : breakpoints[i - 1]!.cHigh;
+    if (concentration >= lowerBound && concentration <= bp.cHigh) {
       const slope = (bp.iHigh - bp.iLow) / (bp.cHigh - bp.cLow);
       const subIndex = slope * (concentration - bp.cLow) + bp.iLow;
-      return Math.round(subIndex);
+      return Math.max(0, Math.min(500, Math.round(subIndex)));
     }
   }
 
-  // Beyond upper boundary clamp to maximum
+  // Beyond upper boundary, clamp to 500
   const highestBp = breakpoints[breakpoints.length - 1]!;
   if (concentration > highestBp.cHigh) {
     return highestBp.iHigh;
@@ -228,6 +258,8 @@ export interface ComprehensiveAQIResult {
   standard: AQIStandard;
   colorHex: string;
   subIndices: SubIndexResult[];
+  isValidStandard: boolean;
+  standardComplianceNotice?: string;
 }
 
 /**
@@ -240,6 +272,17 @@ export function calculateOverallAQI(
 ): ComprehensiveAQIResult {
   if (!readings || readings.length === 0) {
     throw new Error('Readings array cannot be empty');
+  }
+
+  let isValidStandard = true;
+  let standardComplianceNotice: string | undefined;
+
+  if (standard === 'CPCB') {
+    const hasParticulate = readings.some(r => r.pollutant === 'pm25' || r.pollutant === 'pm10');
+    if (readings.length < 3 || !hasParticulate) {
+      isValidStandard = false;
+      standardComplianceNotice = `CPCB NAQI requires at least 3 monitored pollutants, including either PM2.5 or PM10 (Monitored count: ${readings.length}, particulate present: ${hasParticulate})`;
+    }
   }
 
   let maxSubIndex = 0;
@@ -274,6 +317,8 @@ export function calculateOverallAQI(
     category: getAQICategory(maxSubIndex, standard),
     standard,
     colorHex: getAQIColorHex(maxSubIndex, standard),
-    subIndices
+    subIndices,
+    isValidStandard,
+    standardComplianceNotice
   };
 }

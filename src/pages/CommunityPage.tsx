@@ -21,14 +21,16 @@ export const CommunityPage: React.FC = () => {
     cumulativeCO2SavedKg: number;
     cumulativePM25AvoidedGrams: number;
   }>({
-    totalParticipants: 115,
-    totalActivePledges: 3,
-    totalActionsLogged: 244,
-    cumulativeCO2SavedKg: 837.1,
-    cumulativePM25AvoidedGrams: 68550
+    totalParticipants: 0,
+    totalActivePledges: 0,
+    totalActionsLogged: 0,
+    cumulativeCO2SavedKg: 0,
+    cumulativePM25AvoidedGrams: 0
   });
 
-  const [, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isDemoData, setIsDemoData] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [showPledgeModal, setShowPledgeModal] = useState(false);
   const [selectedPledgeForAction, setSelectedPledgeForAction] = useState<CommunityPledgeRecord | null>(null);
 
@@ -44,15 +46,25 @@ export const CommunityPage: React.FC = () => {
 
   const fetchPledges = async () => {
     setIsLoading(true);
+    setErrorMessage(null);
     try {
       const res = await apiRequest<{
         pledges: CommunityPledgeRecord[];
         aggregates: typeof aggregates;
+        isDemoData?: boolean;
       }>('/api/community/pledges');
-      setPledges(res.pledges);
-      setAggregates(res.aggregates);
+      setPledges(res.pledges || []);
+      setAggregates(res.aggregates || {
+        totalParticipants: 0,
+        totalActivePledges: 0,
+        totalActionsLogged: 0,
+        cumulativeCO2SavedKg: 0,
+        cumulativePM25AvoidedGrams: 0
+      });
+      setIsDemoData(Boolean(res.isDemoData));
     } catch (err) {
       console.warn('Failed to load community pledges', err);
+      setErrorMessage('Unable to synchronize community initiatives with server. Please verify your connection.');
     } finally {
       setIsLoading(false);
     }
@@ -131,28 +143,45 @@ export const CommunityPage: React.FC = () => {
         </button>
       </div>
 
+      {/* Honest Demo State Notice */}
+      {isDemoData && (
+        <div className="flex items-center gap-2 p-3.5 bg-amber-50 border border-amber-200 text-amber-900 rounded-xl text-xs font-medium">
+          <Info className="w-4 h-4 shrink-0 text-amber-700" />
+          <span>
+            <strong>Demo Showcase Mode:</strong> These community pledges and impact numbers are sample demonstration initiatives for offline evaluation. In live deployment with Firebase configured, pledges reflect authentic user records.
+          </span>
+        </div>
+      )}
+
+      {/* Error Notice */}
+      {errorMessage && (
+        <div className="p-3.5 bg-rose-50 border border-rose-200 text-rose-800 rounded-xl text-xs font-medium">
+          {errorMessage}
+        </div>
+      )}
+
       {/* Aggregate Impact Counters */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <div className="bg-white rounded-2xl border border-sage-200 p-5 shadow-xs">
           <span className="text-xs font-semibold text-forest-500 block">Total Active Participants</span>
           <span className="text-2xl font-black text-forest-900 font-mono mt-1 block">
-            {aggregates.totalParticipants}
+            {isLoading ? '...' : aggregates.totalParticipants}
           </span>
-          <span className="text-[11px] text-sage-700 font-medium">Across 5 city sectors</span>
+          <span className="text-[11px] text-sage-700 font-medium">Community members</span>
         </div>
 
         <div className="bg-white rounded-2xl border border-sage-200 p-5 shadow-xs">
-          <span className="text-xs font-semibold text-forest-500 block">Verified Environmental Actions</span>
+          <span className="text-xs font-semibold text-forest-500 block">Logged Environmental Actions</span>
           <span className="text-2xl font-black text-forest-900 font-mono mt-1 block">
-            {aggregates.totalActionsLogged}
+            {isLoading ? '...' : aggregates.totalActionsLogged}
           </span>
-          <span className="text-[11px] text-sage-700 font-medium">Server-audited logs</span>
+          <span className="text-[11px] text-sage-700 font-medium">Self-reported contributions</span>
         </div>
 
         <div className="bg-white rounded-2xl border border-sage-200 p-5 shadow-xs">
           <span className="text-xs font-semibold text-forest-500 block">Cumulative Avoided CO₂</span>
           <span className="text-2xl font-black text-forest-900 font-mono mt-1 block">
-            {aggregates.cumulativeCO2SavedKg} kg
+            {isLoading ? '...' : `${aggregates.cumulativeCO2SavedKg} kg`}
           </span>
           <span className="text-[11px] text-forest-600">Avoided passenger-km</span>
         </div>
@@ -160,7 +189,7 @@ export const CommunityPage: React.FC = () => {
         <div className="bg-white rounded-2xl border border-sage-200 p-5 shadow-xs">
           <span className="text-xs font-semibold text-forest-500 block">Particulate Matter Avoided</span>
           <span className="text-2xl font-black text-forest-900 font-mono mt-1 block">
-            {(aggregates.cumulativePM25AvoidedGrams / 1000).toFixed(1)} kg
+            {isLoading ? '...' : `${(aggregates.cumulativePM25AvoidedGrams / 1000).toFixed(1)} kg`}
           </span>
           <span className="text-[11px] text-forest-600">PM2.5 kept out of airshed</span>
         </div>

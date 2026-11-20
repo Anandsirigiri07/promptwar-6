@@ -14,10 +14,10 @@ airQualityRouter.get(
   validateQuery(AirQualityQuerySchema),
   async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
-      const city = (req.query.city as string) || 'Bengaluru';
+      const city = (req.query.city as string) || 'Delhi';
       const scenario = (req.query.scenario as any) || 'realtime';
       const standard = (req.query.standard as any) || 'CPCB';
-      const zones = AirQualityProvider.getZoneTelemetry(city, scenario, standard);
+      const zones = await AirQualityProvider.getZoneTelemetryAsync(city, scenario, standard);
 
       const selectedZone = req.query.zoneId
         ? zones.find(z => z.zoneId === req.query.zoneId) || zones[0]
@@ -45,10 +45,10 @@ airQualityRouter.get(
   validateQuery(AirQualityQuerySchema),
   async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
-      const city = (req.query.city as string) || 'Bengaluru';
+      const city = (req.query.city as string) || 'Delhi';
       const scenario = (req.query.scenario as any) || 'realtime';
       const standard = (req.query.standard as any) || 'CPCB';
-      const zones = AirQualityProvider.getZoneTelemetry(city, scenario, standard);
+      const zones = await AirQualityProvider.getZoneTelemetryAsync(city, scenario, standard);
 
       res.json({
         success: true,

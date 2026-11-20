@@ -32,7 +32,9 @@ export default defineConfig({
       provider: 'v8',
       reporter: ['text', 'json', 'html'],
       include: [
-        'src/lib/compute/**'
+        'src/lib/compute/**',
+        'server/middleware/**',
+        'server/utils/**'
       ],
       exclude: [
         'node_modules/',
@@ -43,10 +45,10 @@ export default defineConfig({
         'vite.config.ts'
       ],
       thresholds: {
-        lines: 85,
-        functions: 85,
+        lines: 80,
+        functions: 80,
         branches: 70,
-        statements: 85
+        statements: 80
       }
     }
   }

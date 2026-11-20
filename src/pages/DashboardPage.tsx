@@ -43,12 +43,22 @@ export const DashboardPage: React.FC = () => {
             <h1 className="text-2xl sm:text-3xl font-extrabold text-forest-900 tracking-tight">
               Hyperlocal Air Quality Intelligence
             </h1>
-            <span className="text-xs px-2 py-0.5 rounded bg-sage-100 text-sage-700 border border-sage-300 font-semibold">
-              Live Monitoring
-            </span>
+            {zone.isDemoData || zone.dataOrigin === 'demo' ? (
+              <span className="text-xs px-2 py-0.5 rounded bg-amber-100 text-amber-800 border border-amber-300 font-semibold">
+                Demo Simulation
+              </span>
+            ) : zone.dataOrigin === 'cached' ? (
+              <span className="text-xs px-2 py-0.5 rounded bg-blue-100 text-blue-800 border border-blue-300 font-semibold">
+                Cached Telemetry
+              </span>
+            ) : (
+              <span className="text-xs px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 border border-emerald-300 font-semibold">
+                Live Model Observation
+              </span>
+            )}
           </div>
           <p className="text-xs sm:text-sm text-forest-600 mt-1">
-            Sector: <strong className="text-forest-900">{zone.name}</strong> • City: {zone.city} • Standard: CPCB NAQI
+            Sector: <strong className="text-forest-900">{zone.name}</strong> • City: {zone.city} • Source: {zone.dataProvider} • Time: {new Date(zone.measuredAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
           </p>
         </div>
 

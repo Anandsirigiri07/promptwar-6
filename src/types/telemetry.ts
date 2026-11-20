@@ -32,6 +32,8 @@ export interface UrbanZoneTelemetry {
   measuredAt: string;
   dataProvider: string;
   isDemoData: boolean;
+  dataOrigin: 'live_station' | 'live_model' | 'cached' | 'demo';
+  freshnessMinutes?: number;
 }
 
 export type ScenarioType = 

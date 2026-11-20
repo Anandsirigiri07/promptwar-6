@@ -82,7 +82,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     storageService.set('rooms', savedRooms);
   }, [savedRooms]);
 
-  // Load air quality telemetry
+  // Listen for real Firebase or local auth state changes
+  useEffect(() => {
+    const unsubscribe = authService.onAuthStateChanged((user) => {
+      setCurrentUser(user);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  const isDemoMode = useMemo(() => {
+    return !currentUser || currentUser.isDemoUser;
+  }, [currentUser]);
   const refreshTelemetry = useCallback(async () => {
     setIsLoading(true);
     try {
@@ -159,7 +169,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     communityPledges,
     isLoading,
     error,
-    isDemoMode: true,
+    isDemoMode,
     setCurrentUser,
     updatePreferences,
     setSelectedZoneId,
@@ -184,6 +194,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     communityPledges,
     isLoading,
     error,
+    isDemoMode,
     updatePreferences,
     setSelectedZoneId,
     setScenario,

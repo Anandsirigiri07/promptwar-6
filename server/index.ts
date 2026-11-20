@@ -6,7 +6,7 @@
 import express from 'express';
 import path from 'node:path';
 import dotenv from 'dotenv';
-import { configureSecurityHeaders, configureCORS, requestSizeLimit } from './middleware/security.js';
+import { configureSecurityHeaders, configureCORS } from './middleware/security.js';
 import { standardApiLimiter } from './middleware/rateLimit.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import { logger } from './utils/logger.js';
@@ -34,8 +34,9 @@ initializeFirebaseAdmin();
 // Security and parsing middleware
 app.use(configureSecurityHeaders());
 app.use(configureCORS());
-app.use(requestSizeLimit(15 * 1024)); // 15 KB baseline bounded payload
-app.use(express.json());
+// Express stream-level payload bounds strictly enforced against chunked or spoofed requests
+app.use(express.json({ limit: '15kb' }));
+app.use(express.urlencoded({ limit: '15kb', extended: true }));
 app.use(standardApiLimiter);
 
 // API route registrations

@@ -6,11 +6,11 @@ import { apiRequest } from './apiService.js';
 import { UrbanZoneTelemetry, ScenarioType } from '../types/telemetry.js';
 
 export const airQualityService = {
-  async getZones(city = 'Bengaluru', scenario: ScenarioType = 'realtime'): Promise<UrbanZoneTelemetry[]> {
+  async getZones(city = 'Delhi', scenario: ScenarioType = 'realtime'): Promise<UrbanZoneTelemetry[]> {
     return apiRequest<UrbanZoneTelemetry[]>(`/api/air-quality/zones?city=${encodeURIComponent(city)}&scenario=${scenario}`);
   },
 
-  async getCurrentZone(city = 'Bengaluru', zoneId = 'zone-1', scenario: ScenarioType = 'realtime') {
+  async getCurrentZone(city = 'Delhi', zoneId = 'zone-delhi-1', scenario: ScenarioType = 'realtime') {
     return apiRequest<{
       currentZone: UrbanZoneTelemetry;
       city: string;

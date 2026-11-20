@@ -1,7 +1,8 @@
 /**
  * VAYUWISE AI - Firebase ID Token Verification Middleware
  * Validates bearer tokens using firebase-admin in production.
- * Provides transparent, clearly labelled DEMO fallback when admin credentials are unconfigured.
+ * In production (NODE_ENV=production), demo tokens and unverified credentials are strictly rejected.
+ * In development/demo environments (NODE_ENV!=production), provides clearly labelled DEMO access.
  */
 
 import { Request, Response, NextFunction } from 'express';
@@ -27,9 +28,19 @@ export async function requireAuth(req: AuthenticatedRequest, res: Response, next
   }
 
   const token = authHeader.split('Bearer ')[1]!.trim();
+  const isProduction = process.env.NODE_ENV === 'production';
 
-  // If token is an explicit demo token or Firebase Admin is running in demo mode
+  // Demo token handling
   if (token === 'demo-token' || token.startsWith('demo-')) {
+    if (isProduction) {
+      logger.warn('Demo token rejected in production environment', { ip: req.ip, path: req.path });
+      res.status(401).json({
+        success: false,
+        error: 'Unauthorized: Demo tokens are not permitted in production environment.'
+      });
+      return;
+    }
+
     req.user = {
       uid: 'demo-user-101',
       email: 'evaluator.demo@vayuwise.local',
@@ -40,10 +51,9 @@ export async function requireAuth(req: AuthenticatedRequest, res: Response, next
   }
 
   try {
-    // In production with real Firebase Admin credentials, verifyIdToken
-    // If admin is not initialized, fallback to verified demo user to allow offline evaluation
     const { getFirebaseAdminAuth } = await import('../services/firestoreService.js');
     const auth = getFirebaseAdminAuth();
+
     if (auth) {
       const decoded = await auth.verifyIdToken(token);
       req.user = {
@@ -53,7 +63,17 @@ export async function requireAuth(req: AuthenticatedRequest, res: Response, next
       };
       next();
     } else {
-      // Clearly labelled demo mode
+      // In production, protected routes MUST fail closed if Firebase Admin credentials are unconfigured
+      if (isProduction) {
+        logger.error('Protected route accessed in production but Firebase Admin is uninitialized');
+        res.status(401).json({
+          success: false,
+          error: 'Unauthorized: Production authentication service is unconfigured. Protected routes fail closed.'
+        });
+        return;
+      }
+
+      // In development / demo mode only
       req.user = {
         uid: `demo-evaluator-${token.slice(0, 8)}`,
         email: 'demo@vayuwise.local',

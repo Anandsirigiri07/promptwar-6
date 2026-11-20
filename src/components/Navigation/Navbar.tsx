@@ -15,7 +15,7 @@ interface NavbarProps {
 }
 
 export const Navbar: React.FC<NavbarProps> = ({ onToggleSidebar, isSidebarOpen }) => {
-  const { preferences, setLanguage, currentScenario, setScenario, selectedZone } = useApp();
+  const { preferences, setLanguage, currentScenario, setScenario, selectedZone, isDemoMode } = useApp();
 
   return (
     <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-sage-200/80 shadow-xs">
@@ -97,11 +97,24 @@ export const Navbar: React.FC<NavbarProps> = ({ onToggleSidebar, isSidebarOpen }
             </select>
           </div>
 
-          {/* Transparent Demo Mode Badge */}
-          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-sage-100 text-sage-700 border border-sage-300">
-            <Shield className="w-3 h-3 text-sage-600" />
-            <span className="hidden sm:inline">Transparent</span> Demo Mode
-          </span>
+          {/* Authentication & Environment State Badge */}
+          {isDemoMode ? (
+            <span
+              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-amber-50 text-amber-800 border border-amber-300"
+              title="Running in local evaluation mode without cloud credentials"
+            >
+              <Shield className="w-3 h-3 text-amber-600" />
+              <span className="hidden sm:inline">Demo</span> Mode
+            </span>
+          ) : (
+            <span
+              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-50 text-emerald-800 border border-emerald-300"
+              title="Authenticated with Firebase Cloud Account"
+            >
+              <Shield className="w-3 h-3 text-emerald-600" />
+              <span className="hidden sm:inline">Firebase</span> Authenticated
+            </span>
+          )}
         </div>
       </div>
     </header>

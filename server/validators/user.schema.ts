@@ -28,7 +28,12 @@ export const IAQCalculateRequestSchema = z.object({
   heightM: z.number().min(1.5).max(30),
   occupants: z.number().int().min(1).max(100).default(3),
   currentPurifierCADR: z.number().min(0).max(10000).default(0),
-  targetACH: z.number().min(1.0).max(15.0).default(5.0)
+  targetACH: z.number().min(1.0).max(15.0).default(5.0),
+  outdoorAQI: z.number().min(0).max(1000).optional(),
+  outdoorPM25: z.number().min(0).max(1000).optional(),
+  temperatureC: z.number().min(-30).max(60).optional(),
+  humidityPercent: z.number().min(0).max(100).optional(),
+  windSpeedKmh: z.number().min(0).max(150).optional()
 });
 
 export const CommunityPledgeRequestSchema = z.object({

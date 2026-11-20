@@ -48,7 +48,7 @@ export const DailyRoutineResponseSchema = z.object({
   overallHealthRiskSummary: z.string(),
   schedule: z.array(ActivityScheduleItemSchema).min(3).max(10),
   estimatedTotalDoseReductionUg: z.number().min(0),
-  generatedBy: z.enum(['Gemini-3.1-Flash-Lite', 'Deterministic-Engine-Fallback']),
+  generatedBy: z.string(),
   generatedAt: z.string(),
   isFallback: z.boolean()
 });
@@ -58,6 +58,7 @@ export const ExposureExplainRequestSchema = z.object({
   durationMinutes: z.number().min(1).max(720),
   locationType: z.enum(['indoor', 'outdoor', 'transit']),
   currentAQI: z.number().min(0).max(1000),
+  ambientPM25: z.number().min(0).max(1000).optional(),
   isMasked: z.boolean().default(false),
   language: z.enum(['en', 'hi', 'kn', 'ar', 'es']).default('en')
 });

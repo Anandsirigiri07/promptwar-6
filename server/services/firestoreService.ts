@@ -1,12 +1,13 @@
 /**
  * VAYUWISE AI - Firebase Admin & Firestore Service
  * Initializes Firebase Admin if credentials are supplied in environment.
- * If credentials are missing, provides in-memory store with verified community aggregates.
+ * If credentials are missing, provides safe local demo data explicitly labeled as demo.
+ * Uses atomic Firestore transactions for pledge progress and impact recalculation.
  */
 
 import admin from 'firebase-admin';
 import { logger } from '../utils/logger.js';
-import { CommunityPledgeRecord } from '../../src/lib/compute/communityImpact.js';
+import { CommunityPledgeRecord, calculatePledgeAvoidedEmissions } from '../../src/lib/compute/communityImpact.js';
 
 let adminApp: admin.app.App | null = null;
 let firestoreDb: admin.firestore.Firestore | null = null;
@@ -18,11 +19,12 @@ const inMemoryActions: Array<{
   userId: string;
   pledgeId: string;
   unitsCompleted: number;
+  status: 'self_reported' | 'verified';
   createdAt: string;
   notes?: string;
 }> = [];
 
-// Seed sample community initiatives
+// Seed sample community initiatives for offline evaluation
 const defaultSeedPledges: CommunityPledgeRecord[] = [
   {
     id: 'pledge-carpool-koramangala',
@@ -35,7 +37,7 @@ const defaultSeedPledges: CommunityPledgeRecord[] = [
     estimatedCO2SavingsKg: 89.6,
     estimatedPM25AvoidedGrams: 51.2,
     participants: 18,
-    createdAt: new Date().toISOString()
+    createdAt: '2026-11-01T08:00:00.000Z'
   },
   {
     id: 'pledge-anti-burn-outerring',
@@ -48,7 +50,7 @@ const defaultSeedPledges: CommunityPledgeRecord[] = [
     estimatedCO2SavingsKg: 570,
     estimatedPM25AvoidedGrams: 68400,
     participants: 42,
-    createdAt: new Date().toISOString()
+    createdAt: '2026-11-02T08:00:00.000Z'
   },
   {
     id: 'pledge-metro-shift-challenge',
@@ -61,7 +63,7 @@ const defaultSeedPledges: CommunityPledgeRecord[] = [
     estimatedCO2SavingsKg: 177.5,
     estimatedPM25AvoidedGrams: 99.4,
     participants: 55,
-    createdAt: new Date().toISOString()
+    createdAt: '2026-11-03T08:00:00.000Z'
   }
 ];
 
@@ -74,7 +76,7 @@ export function initializeFirebaseAdmin(): void {
   const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
   const privateKey = process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n');
 
-  if (projectId && clientEmail && privateKey) {
+  if (projectId && clientEmail && privateKey && !projectId.includes('vayuwise-demo')) {
     try {
       adminApp = admin.initializeApp({
         credential: admin.credential.cert({
@@ -103,12 +105,25 @@ export function getFirestore(): admin.firestore.Firestore | null {
   return firestoreDb;
 }
 
-export async function fetchCommunityPledges(): Promise<CommunityPledgeRecord[]> {
+export async function fetchCommunityPledges(): Promise<{
+  pledges: CommunityPledgeRecord[];
+  isDemoData: boolean;
+}> {
   if (firestoreDb) {
     const snapshot = await firestoreDb.collection('communityPledges').get();
-    return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as CommunityPledgeRecord));
+    const pledges = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as CommunityPledgeRecord));
+    return { pledges, isDemoData: false };
   }
-  return Array.from(inMemoryPledges.values());
+  return { pledges: Array.from(inMemoryPledges.values()), isDemoData: true };
+}
+
+export async function getCommunityPledgeById(pledgeId: string): Promise<CommunityPledgeRecord | null> {
+  if (firestoreDb) {
+    const doc = await firestoreDb.collection('communityPledges').doc(pledgeId).get();
+    if (!doc.exists) return null;
+    return { id: doc.id, ...doc.data() } as CommunityPledgeRecord;
+  }
+  return inMemoryPledges.get(pledgeId) || null;
 }
 
 export async function saveCommunityPledge(pledge: CommunityPledgeRecord): Promise<void> {
@@ -125,30 +140,75 @@ export async function logCommunityAction(action: {
   pledgeId: string;
   unitsCompleted: number;
   notes?: string;
-}): Promise<void> {
+}): Promise<{
+  actionId: string;
+  updatedPledge: CommunityPledgeRecord;
+  status: 'self_reported';
+} | null> {
   if (firestoreDb) {
-    const batch = firestoreDb.batch();
-    const actionRef = firestoreDb.collection('communityActions').doc(action.id);
-    batch.set(actionRef, {
-      ...action,
-      verifiedAt: new Date().toISOString()
-    });
-
     const pledgeRef = firestoreDb.collection('communityPledges').doc(action.pledgeId);
-    batch.update(pledgeRef, {
-      completedCount: admin.firestore.FieldValue.increment(action.unitsCompleted)
-    });
+    const actionRef = firestoreDb.collection('communityActions').doc(action.id);
 
-    await batch.commit();
+    return await firestoreDb.runTransaction(async (transaction) => {
+      const pledgeDoc = await transaction.get(pledgeRef);
+      if (!pledgeDoc.exists) {
+        return null;
+      }
+
+      const pledgeData = pledgeDoc.data() as CommunityPledgeRecord;
+      const newCompletedCount = (pledgeData.completedCount || 0) + action.unitsCompleted;
+      const updatedImpact = calculatePledgeAvoidedEmissions(pledgeData.category, newCompletedCount);
+
+      const updatedPledge: CommunityPledgeRecord = {
+        ...pledgeData,
+        completedCount: newCompletedCount,
+        participants: (pledgeData.participants || 0) + 1,
+        estimatedCO2SavingsKg: updatedImpact.co2Kg,
+        estimatedPM25AvoidedGrams: updatedImpact.pm25Grams
+      };
+
+      // Record the logged action as self_reported (never claiming external verification)
+      transaction.set(actionRef, {
+        ...action,
+        status: 'self_reported',
+        loggedAt: new Date().toISOString()
+      });
+
+      transaction.update(pledgeRef, {
+        completedCount: updatedPledge.completedCount,
+        participants: updatedPledge.participants,
+        estimatedCO2SavingsKg: updatedPledge.estimatedCO2SavingsKg,
+        estimatedPM25AvoidedGrams: updatedPledge.estimatedPM25AvoidedGrams
+      });
+
+      return {
+        actionId: action.id,
+        updatedPledge,
+        status: 'self_reported' as const
+      };
+    });
   } else {
+    const pledge = inMemoryPledges.get(action.pledgeId);
+    if (!pledge) {
+      return null;
+    }
+
+    pledge.completedCount += action.unitsCompleted;
+    pledge.participants += 1;
+    const updatedImpact = calculatePledgeAvoidedEmissions(pledge.category, pledge.completedCount);
+    pledge.estimatedCO2SavingsKg = updatedImpact.co2Kg;
+    pledge.estimatedPM25AvoidedGrams = updatedImpact.pm25Grams;
+
     inMemoryActions.push({
       ...action,
+      status: 'self_reported',
       createdAt: new Date().toISOString()
     });
-    const pledge = inMemoryPledges.get(action.pledgeId);
-    if (pledge) {
-      pledge.completedCount += action.unitsCompleted;
-      pledge.participants += 1;
-    }
+
+    return {
+      actionId: action.id,
+      updatedPledge: { ...pledge },
+      status: 'self_reported' as const
+    };
   }
 }
