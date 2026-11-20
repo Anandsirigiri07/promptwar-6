@@ -50,6 +50,20 @@ jobs:
             console.log(`[${advisory.severity}] ${name} | direct=${advisory.isDirect} | range=${advisory.range} | fix=${JSON.stringify(advisory.fixAvailable)} | ${titles}`);
           }
           NODE
+          npm audit --omit=dev --json > npm-audit-production.json || true
+          node <<'NODE'
+          const fs = require('node:fs');
+          try {
+            const report = JSON.parse(fs.readFileSync('npm-audit-production.json', 'utf8'));
+            console.log('Production dependency advisory totals:', JSON.stringify(report.metadata?.vulnerabilities ?? {}));
+            for (const [name, advisory] of Object.entries(report.vulnerabilities ?? {})) {
+              const via = (advisory.via ?? []).map(item => typeof item === 'string' ? item : item.title).join('; ');
+              console.log(`[${advisory.severity}] ${name} | direct=${advisory.isDirect} | range=${advisory.range} | fix=${JSON.stringify(advisory.fixAvailable)} | ${via}`);
+            }
+          } catch {
+            console.log('Production dependency audit did not return JSON. Check npm registry connectivity.');
+          }
+          NODE
 
       - name: TypeScript Static Typecheck
         run: npm run typecheck
