@@ -1,0 +1,84 @@
+import { describe, it, expect } from 'vitest';
+import { render, screen } from '@testing-library/react';
+import { BrowserRouter } from 'react-router-dom';
+import { AqiBadge } from '../components/shared/AqiBadge.js';
+import { PollutantSparkline } from '../components/shared/PollutantSparkline.js';
+import { UrbanMapSvg } from '../components/shared/UrbanMapSvg.js';
+import { AppProvider } from '../context/AppContext.js';
+import { Navbar } from '../components/Navigation/Navbar.js';
+import { Sidebar } from '../components/Navigation/Sidebar.js';
+
+describe('UI Component Rendering & Accessibility Attributes', () => {
+  it('renders AqiBadge with accessible aria-label and numerical status', () => {
+    render(<AqiBadge aqi={185} category="Moderate" />);
+    const badge = screen.getByRole('status');
+    expect(badge).toBeInTheDocument();
+    expect(badge).toHaveAttribute('aria-label', 'Air Quality Index: 185, Category: Moderate');
+    expect(screen.getByText('185 AQI')).toBeInTheDocument();
+  });
+
+  it('renders PollutantSparkline with screen-reader text fallback', () => {
+    render(
+      <PollutantSparkline
+        data={[90, 110, 125, 140, 150]}
+        unit="µg/m³"
+        pollutantName="Fine PM2.5"
+      />
+    );
+    expect(screen.getByText(/Fine PM2.5 7-hour trend is rising/i)).toBeInTheDocument();
+  });
+
+  it('renders UrbanMapSvg with accessible table companion and zone buttons', () => {
+    const mockZones: any[] = [
+      {
+        zoneId: 'zone-1',
+        name: 'Tech Corridor',
+        overallAQI: 165,
+        category: 'Moderate',
+        dominantPollutant: 'pm25',
+        pollutants: { pm25: { concentration: 85 } }
+      }
+    ];
+
+    render(
+      <UrbanMapSvg
+        zones={mockZones}
+        selectedZoneId="zone-1"
+        onSelectZone={() => {}}
+      />
+    );
+
+    const mapGraphic = screen.getByRole('img');
+    expect(mapGraphic).toBeInTheDocument();
+    expect(screen.getAllByText('Tech Corridor').length).toBeGreaterThan(0);
+  });
+
+  it('renders Navbar with brand title and accessible controls', () => {
+    render(
+      <BrowserRouter>
+        <AppProvider>
+          <Navbar isSidebarOpen={false} onToggleSidebar={() => {}} />
+        </AppProvider>
+      </BrowserRouter>
+    );
+
+    expect(screen.getByText(/VAYUWISE/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/Select Language/i)).toBeInTheDocument();
+  });
+
+  it('renders Sidebar with full navigation links to all platform pages', () => {
+    render(
+      <BrowserRouter>
+        <AppProvider>
+          <Sidebar isOpen={true} onClose={() => {}} />
+        </AppProvider>
+      </BrowserRouter>
+    );
+
+    expect(screen.getByText('Overview')).toBeInTheDocument();
+    expect(screen.getByText(/Air Intelligence/i)).toBeInTheDocument();
+    expect(screen.getByText(/AI Daily Routine/i)).toBeInTheDocument();
+    expect(screen.getByText(/Transit Optimizer/i)).toBeInTheDocument();
+    expect(screen.getByText(/Indoor Quality & DIY/i)).toBeInTheDocument();
+  });
+});
