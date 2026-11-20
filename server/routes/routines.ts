@@ -69,7 +69,7 @@ routinesRouter.post(
             isAvailable: false,
             isMasked,
             explanation: `Inhaled PM2.5 particulate mass dose cannot be determined from overall AQI alone (${currentAQI ?? 'unknown'}). Overall AQI is determined by the highest sub-index among all criteria pollutants (PM10, NO2, SO2, CO, O3) and does not identify PM2.5 mass concentration. Direct PM2.5 concentration (µg/m³) or explicit PM2.5 sub-index is required for physical inhalation calculations.`,
-            methodology: `Illustrative inhaled mass = concentration × duration × assumed ventilation rate × assumed penetration fraction. Assumptions: ${ventilationRate} m³/h ventilation and ${penetration} penetration. No individual physiology, particle deposition or measured respirator fit is represented.`
+            methodology: 'Not calculated because a valid PM2.5 concentration or PM2.5 sub-index is unavailable.'
           }
         });
         return;
