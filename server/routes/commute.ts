@@ -37,18 +37,18 @@ function createUrbanTransitGraph(ambientPM25: number, city = 'Delhi'): DijkstraR
 
   const edges: GraphEdge[] = [
     // Direct arterial road route (heavy congestion & high localized PM2.5)
-    { from: 'node-home', to: 'node-arterial', distanceKm: 4.2, mode: 'petrol_car', ambientAQI: ambientPM25 * 1.3 },
-    { from: 'node-arterial', to: 'node-office', distanceKm: 5.8, mode: 'petrol_car', ambientAQI: ambientPM25 * 1.4 },
+    { from: 'node-home', to: 'node-arterial', distanceKm: 4.2, mode: 'petrol_car', ambientPM25: ambientPM25 * 1.3 },
+    { from: 'node-arterial', to: 'node-office', distanceKm: 5.8, mode: 'petrol_car', ambientPM25: ambientPM25 * 1.4 },
     // Metro transit path (walk to station -> electric train -> short walk to office)
-    { from: 'node-home', to: 'node-metro-a', distanceKm: 0.8, mode: 'walking', ambientAQI: ambientPM25 },
-    { from: 'node-metro-a', to: 'node-metro-b', distanceKm: 8.5, mode: 'metro', ambientAQI: ambientPM25 * 0.35 },
-    { from: 'node-metro-b', to: 'node-office', distanceKm: 0.6, mode: 'walking', ambientAQI: ambientPM25 },
+    { from: 'node-home', to: 'node-metro-a', distanceKm: 0.8, mode: 'walking', ambientPM25: ambientPM25 },
+    { from: 'node-metro-a', to: 'node-metro-b', distanceKm: 8.5, mode: 'metro', ambientPM25: ambientPM25 * 0.35 },
+    { from: 'node-metro-b', to: 'node-office', distanceKm: 0.6, mode: 'walking', ambientPM25: ambientPM25 },
     // Backroad bicycle / green corridor route
-    { from: 'node-home', to: 'node-backroad', distanceKm: 2.1, mode: 'cycling', ambientAQI: ambientPM25 * 0.75 },
-    { from: 'node-backroad', to: 'node-office', distanceKm: 7.2, mode: 'cycling', ambientAQI: ambientPM25 * 0.8 },
+    { from: 'node-home', to: 'node-backroad', distanceKm: 2.1, mode: 'cycling', ambientPM25: ambientPM25 * 0.75 },
+    { from: 'node-backroad', to: 'node-office', distanceKm: 7.2, mode: 'cycling', ambientPM25: ambientPM25 * 0.8 },
     // Electric bus along arterial
-    { from: 'node-home', to: 'node-arterial', distanceKm: 4.2, mode: 'electric_bus', ambientAQI: ambientPM25 * 1.05 },
-    { from: 'node-arterial', to: 'node-office', distanceKm: 5.8, mode: 'electric_bus', ambientAQI: ambientPM25 * 1.05 }
+    { from: 'node-home', to: 'node-arterial', distanceKm: 4.2, mode: 'electric_bus', ambientPM25: ambientPM25 * 1.05 },
+    { from: 'node-arterial', to: 'node-office', distanceKm: 5.8, mode: 'electric_bus', ambientPM25: ambientPM25 * 1.05 }
   ];
 
   for (const e of edges) router.addEdge(e);

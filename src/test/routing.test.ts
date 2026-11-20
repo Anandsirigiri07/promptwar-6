@@ -17,13 +17,13 @@ describe('Pure Dijkstra Multi-Modal Routing Engine', () => {
     for (const n of nodes) router.addNode(n);
 
     // Path 1: Walk to metro, fast filtered metro, walk to office (Total: 0.5 + 8 + 0.5 = 9km, low exposure)
-    router.addEdge({ from: 'A', to: 'B', distanceKm: 0.5, mode: 'walking', ambientAQI: 150 });
-    router.addEdge({ from: 'B', to: 'C', distanceKm: 8.0, mode: 'metro', ambientAQI: 60 });
-    router.addEdge({ from: 'C', to: 'D', distanceKm: 0.5, mode: 'walking', ambientAQI: 150 });
+    router.addEdge({ from: 'A', to: 'B', distanceKm: 0.5, mode: 'walking', ambientPM25: 150 });
+    router.addEdge({ from: 'B', to: 'C', distanceKm: 8.0, mode: 'metro', ambientPM25: 60 });
+    router.addEdge({ from: 'C', to: 'D', distanceKm: 0.5, mode: 'walking', ambientPM25: 150 });
 
     // Path 2: Direct congested highway in car (Total: 4 + 4 = 8km, shorter distance but high exposure)
-    router.addEdge({ from: 'A', to: 'E', distanceKm: 4.0, mode: 'petrol_car', ambientAQI: 280 });
-    router.addEdge({ from: 'E', to: 'D', distanceKm: 4.0, mode: 'petrol_car', ambientAQI: 280 });
+    router.addEdge({ from: 'A', to: 'E', distanceKm: 4.0, mode: 'petrol_car', ambientPM25: 280 });
+    router.addEdge({ from: 'E', to: 'D', distanceKm: 4.0, mode: 'petrol_car', ambientPM25: 280 });
 
     return router;
   }

@@ -35,6 +35,7 @@ iaqRouter.post(
       let ambientAQI: number | undefined = req.body.outdoorAQI;
       let weather: WeatherData | undefined;
       let sourceLabel = 'unavailable';
+      let weatherSourceLabel = 'unavailable';
 
       if (typeof ambientAQI === 'number') {
         sourceLabel = 'user_supplied';
@@ -49,6 +50,7 @@ iaqRouter.post(
             humidityPercent: req.body.humidityPercent,
             windSpeedKmh: req.body.windSpeedKmh
           };
+          weatherSourceLabel = 'user_supplied_not_independently_verified';
         } else {
           // Attempt to fetch independent live meteorology for city coordinates
           try {
@@ -58,6 +60,7 @@ iaqRouter.post(
               const live = await MeteorologyProvider.fetchLiveWeatherForCoordinatesAsync(firstZone.latitude, firstZone.longitude);
               if (live) {
                 weather = live.weather;
+                weatherSourceLabel = 'open_meteo_model';
               }
             }
           } catch {
@@ -69,8 +72,12 @@ iaqRouter.post(
         try {
           const zones = await AirQualityProvider.getZoneTelemetryAsync(req.body.city || 'Delhi');
           if (zones && zones[0]) {
-            ambientAQI = zones[0].overallAQI;
-            sourceLabel = zones[0].dataOrigin;
+            if (zones[0].aqiIsValid !== false) {
+              ambientAQI = zones[0].overallAQI;
+              sourceLabel = zones[0].dataOrigin;
+            } else {
+              sourceLabel = 'aqi_unavailable_incomplete_coverage';
+            }
             if (
               zones[0].temperatureC !== null &&
               zones[0].humidityPercent !== null &&
@@ -81,6 +88,7 @@ iaqRouter.post(
                 humidityPercent: zones[0].humidityPercent,
                 windSpeedKmh: zones[0].windSpeedKmh
               };
+              weatherSourceLabel = `${zones[0].dataOrigin}:${zones[0].weatherSource || 'provider weather'}`;
             }
           }
         } catch {
@@ -95,8 +103,8 @@ iaqRouter.post(
         ventilationAdvice = {
           action: 'Keep Windows Closed',
           recommendedHoursDescription: 'Insufficient local meteorological observations. Keep windows closed as a precautionary measure during winter smog periods.',
-          reason: 'Ventilation evaluation requires verified outdoor AQI and meteorological readings (temperature, humidity, and wind speed). Do not open windows based on unmeasured assumptions.',
-          ambientAQI: ambientAQI ?? 0,
+          reason: 'Ventilation evaluation requires outdoor AQI and meteorological readings (temperature, humidity, and wind speed). User-supplied values are not independently verified; unavailable readings must not be interpreted as clean air.',
+          ambientAQI: ambientAQI ?? null,
           confidenceScore: 0
         };
       }
@@ -112,6 +120,7 @@ iaqRouter.post(
             humidityPercent: weather?.humidityPercent ?? null,
             windSpeedKmh: weather?.windSpeedKmh ?? null,
             source: sourceLabel,
+            weatherSource: weatherSourceLabel,
             isAvailable: ambientAQI !== undefined && weather !== undefined
           },
           corsiRosenthalReference: CORSI_ROSENTHAL_REFERENCE

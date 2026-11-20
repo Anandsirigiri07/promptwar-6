@@ -43,7 +43,15 @@ export const DashboardPage: React.FC = () => {
             <h1 className="text-2xl sm:text-3xl font-extrabold text-forest-900 tracking-tight">
               Hyperlocal Air Quality Intelligence
             </h1>
-            {zone.isDemoData || zone.dataOrigin === 'demo' ? (
+            {zone.aqiIsValid === false ? (
+              <span className="text-xs px-2 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-300 font-semibold">
+                Incomplete AQI Coverage
+              </span>
+            ) : zone.dataOrigin === 'live_station' ? (
+              <span className="text-xs px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 border border-emerald-300 font-semibold">
+                Ground Station
+              </span>
+            ) : zone.isDemoData || zone.dataOrigin === 'demo' ? (
               <span className="text-xs px-2 py-0.5 rounded bg-amber-100 text-amber-800 border border-amber-300 font-semibold">
                 Demo Simulation
               </span>
@@ -201,7 +209,7 @@ export const DashboardPage: React.FC = () => {
               </span>
               <h2 className="text-lg font-bold text-forest-900">{zone.name}</h2>
             </div>
-            <AqiBadge aqi={zone.overallAQI} category={zone.category} size="lg" />
+            <AqiBadge aqi={zone.overallAQI} category={zone.category} size="lg" isValid={zone.aqiIsValid !== false} basis={zone.aqiBasis} />
           </div>
 
           <div className="p-4 rounded-xl bg-sage-50/70 border border-sage-200/80 space-y-2">
@@ -214,14 +222,14 @@ export const DashboardPage: React.FC = () => {
             <div className="flex items-center justify-between text-xs">
               <span className="text-forest-600 font-medium">Concentration:</span>
               <strong className="text-forest-900 font-bold">
-                {zone.pollutants[zone.dominantPollutant]?.concentration}{' '}
-                {zone.pollutants[zone.dominantPollutant]?.unit}
+                {zone.pollutants[zone.dominantPollutant]?.concentration ?? 'Unavailable'}{' '}
+                {zone.pollutants[zone.dominantPollutant]?.concentration !== null ? zone.pollutants[zone.dominantPollutant]?.unit : ''}
               </strong>
             </div>
             <div className="flex items-center justify-between text-xs">
               <span className="text-forest-600 font-medium">Sub-Index:</span>
               <strong className="text-forest-900 font-bold">
-                {zone.pollutants[zone.dominantPollutant]?.subIndex}
+                {zone.pollutants[zone.dominantPollutant]?.subIndex ?? 'Unavailable'}
               </strong>
             </div>
           </div>
@@ -279,12 +287,16 @@ export const DashboardPage: React.FC = () => {
                     </span>
                     <h3 className="text-sm font-bold text-forest-900">{p.name}</h3>
                   </div>
-                  <AqiBadge aqi={p.subIndex} category={p.category} size="sm" showCategoryText={false} />
+                  {p.subIndex !== null ? (
+                    <AqiBadge aqi={p.subIndex} category={p.category} size="sm" showCategoryText={false} />
+                  ) : (
+                    <span className="text-xs text-slate-500">Sub-index unavailable</span>
+                  )}
                 </div>
 
                 <div className="flex items-baseline gap-2">
                   <span className="text-2xl font-extrabold text-forest-900 font-mono">
-                    {p.concentration}
+                    {p.concentration ?? 'Unavailable'}
                   </span>
                   <span className="text-xs font-semibold text-forest-600">{p.unit}</span>
                 </div>

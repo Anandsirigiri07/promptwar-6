@@ -60,7 +60,7 @@ export const UrbanMapSvg: React.FC<UrbanMapSvgProps> = ({
         {zones.map((zone) => {
           const pos = nodePositions[zone.zoneId] || { cx: 200, cy: 150, label: zone.name };
           const isSelected = zone.zoneId === selectedZoneId;
-          const aqiColor = getAQIColorHex(zone.overallAQI, 'CPCB');
+          const aqiColor = zone.aqiIsValid === false ? '#64748B' : getAQIColorHex(zone.overallAQI, 'CPCB');
 
           return (
             <g
@@ -69,7 +69,9 @@ export const UrbanMapSvg: React.FC<UrbanMapSvgProps> = ({
               className="cursor-pointer transition-transform duration-200 hover:scale-105"
               tabIndex={0}
               role="button"
-              aria-label={`Sector: ${zone.name}, AQI: ${zone.overallAQI}, Category: ${zone.category}. Click to select.`}
+              aria-label={zone.aqiIsValid === false
+                ? `Sector: ${zone.name}, AQI unavailable because monitored pollutant coverage is incomplete. Click to select.`
+                : `Sector: ${zone.name}, ${zone.aqiBasis === 'instantaneous_estimate' ? 'Indicative AQI' : zone.aqiBasis === 'scenario' ? 'Scenario AQI' : 'AQI'}: ${zone.overallAQI}, Category: ${zone.category}. Click to select.`}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' || e.key === ' ') {
                   e.preventDefault();
@@ -111,7 +113,7 @@ export const UrbanMapSvg: React.FC<UrbanMapSvgProps> = ({
                 fontWeight="bold"
                 className="pointer-events-none"
               >
-                {zone.overallAQI}
+                {zone.aqiIsValid === false ? '—' : zone.overallAQI}
               </text>
               {/* Label below node */}
               <rect
@@ -156,9 +158,9 @@ export const UrbanMapSvg: React.FC<UrbanMapSvgProps> = ({
           {zones.map((z) => (
             <tr key={z.zoneId}>
               <td>{z.name}</td>
-              <td>{z.overallAQI}</td>
+              <td>{z.aqiIsValid === false ? 'Unavailable' : z.overallAQI}</td>
               <td>{z.category}</td>
-              <td>{z.pollutants.pm25.concentration}</td>
+              <td>{z.pollutants.pm25.concentration ?? 'Unavailable'}</td>
               <td>{z.dominantPollutant.toUpperCase()}</td>
             </tr>
           ))}

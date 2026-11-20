@@ -16,26 +16,28 @@ import { getZonesForCity, UrbanZoneDefinition } from '../../src/lib/constants.js
 import { logger } from '../utils/logger.js';
 import { MeteorologyProvider } from './meteorologyProvider.js';
 
-// OpenAQ v3 API response schema for physical ground monitoring stations
+// OpenAQ v3 location metadata and latest-measurement response schemas.
 const OpenAQV3LocationsSchema = z.object({
   results: z.array(z.object({
     id: z.number(),
-    name: z.string(),
+    name: z.string().nullable().optional(),
+    isMonitor: z.boolean().optional(),
     coordinates: z.object({
-      latitude: z.number(),
-      longitude: z.number()
+      latitude: z.number().nullable(),
+      longitude: z.number().nullable()
     }),
-    datetimeLast: z.object({
-      utc: z.string()
-    }).optional(),
     sensors: z.array(z.object({
       id: z.number(),
-      parameter: z.object({
-        name: z.string(),
-        units: z.string()
-      }),
-      value: z.number().nullable().optional()
+      parameter: z.object({ name: z.string(), units: z.string() })
     })).optional()
+  })).optional()
+});
+const OpenAQLatestSchema = z.object({
+  results: z.array(z.object({
+    datetime: z.object({ utc: z.string() }),
+    value: z.number().finite(),
+    sensorsId: z.number(),
+    locationsId: z.number()
   })).optional()
 });
 
@@ -101,7 +103,11 @@ export class AirQualityProvider {
       return this.getCalibratedDemoTelemetry(zones, scenario, standard);
     }
 
-    // 1. If OPENAQ_API_KEY is configured, attempt querying authentic physical ground monitoring stations
+    // Keep successful OpenAQ station readings per zone. Zones without a nearby fresh station
+    // may use the explicitly labelled model provider below.
+    const openAQByZone = new Map<string, UrbanZoneTelemetry>();
+
+    // 1. If OPENAQ_API_KEY is configured, attempt querying physical ground monitoring stations
     const openAQKey = process.env.OPENAQ_API_KEY;
     if (openAQKey && openAQKey.trim() !== '' && !openAQKey.includes('your_openaq_api_key')) {
       try {
@@ -109,9 +115,11 @@ export class AirQualityProvider {
           zones.map(z => this.fetchLiveOpenAQZone(z, standard))
         );
         const liveStations: UrbanZoneTelemetry[] = [];
-        for (const res of openAQResults) {
+        for (let i = 0; i < openAQResults.length; i++) {
+          const res = openAQResults[i]!;
           if (res.status === 'fulfilled' && res.value !== null) {
             liveStations.push(res.value);
+            openAQByZone.set(zones[i]!.id, res.value);
           }
         }
         if (liveStations.length === zones.length) {
@@ -132,27 +140,25 @@ export class AirQualityProvider {
         zones.map(z => this.fetchLiveOpenMeteoZone(z, standard))
       );
 
-      const allLiveZones: UrbanZoneTelemetry[] = [];
-      let anyFailed = false;
+      const demoZones = this.getCalibratedDemoTelemetry(zones, scenario, standard);
+      const resolvedZones: UrbanZoneTelemetry[] = zones.map((zone, index) => {
+        const stationReading = openAQByZone.get(zone.id);
+        if (stationReading) return stationReading;
 
-      for (let i = 0; i < zones.length; i++) {
-        const res = liveResults[i]!;
-        if (res.status === 'fulfilled' && res.value !== null) {
-          allLiveZones.push(res.value);
-        } else {
-          anyFailed = true;
-          break;
-        }
-      }
+        const result = liveResults[index];
+        if (result?.status === 'fulfilled' && result.value !== null) return result.value;
 
-      // If all zones were successfully retrieved independently from live provider
-      if (!anyFailed && allLiveZones.length === zones.length) {
+        // Keep successful live zones and clearly-labelled demo data for only the unavailable zones.
+        return demoZones[index]!;
+      });
+
+      if (resolvedZones.every(zone => zone.dataOrigin !== 'demo')) {
         zoneTelemetryCache.set(cacheKey, {
-          data: allLiveZones,
+          data: resolvedZones,
           expiresAt: now + CACHE_TTL_MS
         });
-        return allLiveZones;
       }
+      return resolvedZones;
     } catch (err) {
       logger.warn('Live environmental provider unreachable, using calibrated offline engine', {
         city,
@@ -240,12 +246,12 @@ export class AirQualityProvider {
         return valid.slice(-7);
       };
 
-      const pm25Val = readings.find(r => r.pollutant === 'pm25')?.concentration ?? 0;
-      const pm10Val = readings.find(r => r.pollutant === 'pm10')?.concentration ?? 0;
-      const no2Val = readings.find(r => r.pollutant === 'no2')?.concentration ?? 0;
-      const coVal = readings.find(r => r.pollutant === 'co')?.concentration ?? 0;
-      const o3Val = readings.find(r => r.pollutant === 'o3')?.concentration ?? 0;
-      const so2Val = readings.find(r => r.pollutant === 'so2')?.concentration ?? 0;
+      const pm25Val = readings.find(r => r.pollutant === 'pm25')?.concentration ?? null;
+      const pm10Val = readings.find(r => r.pollutant === 'pm10')?.concentration ?? null;
+      const no2Val = readings.find(r => r.pollutant === 'no2')?.concentration ?? null;
+      const coVal = readings.find(r => r.pollutant === 'co')?.concentration ?? null;
+      const o3Val = readings.find(r => r.pollutant === 'o3')?.concentration ?? null;
+      const so2Val = readings.find(r => r.pollutant === 'so2')?.concentration ?? null;
 
       const pollutants: Record<PollutantType, PollutantDetail> = {
         pm25: {
@@ -253,8 +259,8 @@ export class AirQualityProvider {
           name: 'Fine Particulate Matter (PM2.5)',
           concentration: pm25Val,
           unit: 'µg/m³',
-          subIndex: aqiResult.subIndices.find(s => s.pollutant === 'pm25')?.subIndex || pm25Val,
-          category: aqiResult.subIndices.find(s => s.pollutant === 'pm25')?.category || 'Moderate',
+          subIndex: aqiResult.subIndices.find(s => s.pollutant === 'pm25')?.subIndex ?? null,
+          category: aqiResult.subIndices.find(s => s.pollutant === 'pm25')?.category ?? 'Unavailable',
           healthImplications: 'Penetrates deep into alveolar air sacs and bloodstream.',
           hourlyTrend: extractHourlyTrend(hourly?.pm2_5)
         },
@@ -263,7 +269,7 @@ export class AirQualityProvider {
           name: 'Coarse Particulates (PM10)',
           concentration: pm10Val,
           unit: 'µg/m³',
-          subIndex: aqiResult.subIndices.find(s => s.pollutant === 'pm10')?.subIndex || pm10Val,
+          subIndex: aqiResult.subIndices.find(s => s.pollutant === 'pm10')?.subIndex ?? null,
           category: aqiResult.subIndices.find(s => s.pollutant === 'pm10')?.category || 'Moderate',
           healthImplications: 'Irritates upper airway passages and exacerbates bronchitis.',
           hourlyTrend: extractHourlyTrend(hourly?.pm10)
@@ -273,8 +279,8 @@ export class AirQualityProvider {
           name: 'Nitrogen Dioxide (NO2)',
           concentration: no2Val,
           unit: 'µg/m³',
-          subIndex: aqiResult.subIndices.find(s => s.pollutant === 'no2')?.subIndex || no2Val,
-          category: aqiResult.subIndices.find(s => s.pollutant === 'no2')?.category || 'Good',
+          subIndex: aqiResult.subIndices.find(s => s.pollutant === 'no2')?.subIndex ?? null,
+          category: aqiResult.subIndices.find(s => s.pollutant === 'no2')?.category ?? 'Unavailable',
           healthImplications: 'Traffic exhaust oxidant triggering airway hyper-reactivity.',
           hourlyTrend: extractHourlyTrend(hourly?.nitrogen_dioxide)
         },
@@ -283,7 +289,7 @@ export class AirQualityProvider {
           name: 'Carbon Monoxide (CO)',
           concentration: coVal,
           unit: 'mg/m³',
-          subIndex: aqiResult.subIndices.find(s => s.pollutant === 'co')?.subIndex || 40,
+          subIndex: aqiResult.subIndices.find(s => s.pollutant === 'co')?.subIndex ?? null,
           category: aqiResult.subIndices.find(s => s.pollutant === 'co')?.category || 'Good',
           healthImplications: 'Competes with oxygen binding to arterial hemoglobin.',
           hourlyTrend: extractHourlyTrend(hourly?.carbon_monoxide).map(v => Math.round((v / 1000) * 10) / 10)
@@ -293,7 +299,7 @@ export class AirQualityProvider {
           name: 'Ground-Level Ozone (O3)',
           concentration: o3Val,
           unit: 'µg/m³',
-          subIndex: aqiResult.subIndices.find(s => s.pollutant === 'o3')?.subIndex || o3Val,
+          subIndex: aqiResult.subIndices.find(s => s.pollutant === 'o3')?.subIndex ?? null,
           category: aqiResult.subIndices.find(s => s.pollutant === 'o3')?.category || 'Good',
           healthImplications: 'Photochemical oxidant provoking acute coughing and chest tightness.',
           hourlyTrend: extractHourlyTrend(hourly?.ozone)
@@ -303,7 +309,7 @@ export class AirQualityProvider {
           name: 'Sulfur Dioxide (SO2)',
           concentration: so2Val,
           unit: 'µg/m³',
-          subIndex: aqiResult.subIndices.find(s => s.pollutant === 'so2')?.subIndex || so2Val,
+          subIndex: aqiResult.subIndices.find(s => s.pollutant === 'so2')?.subIndex ?? null,
           category: aqiResult.subIndices.find(s => s.pollutant === 'so2')?.category || 'Good',
           healthImplications: 'Industrial effluent gas triggering bronchoconstriction.',
           hourlyTrend: extractHourlyTrend(hourly?.sulphur_dioxide)
@@ -325,8 +331,11 @@ export class AirQualityProvider {
         latitude: zone.latitude,
         longitude: zone.longitude,
         overallAQI: aqiResult.overallAQI,
+        aqiIsValid: aqiResult.isValidStandard,
+        aqiBasis: 'instantaneous_estimate',
+        aqiComplianceNotice: aqiResult.standardComplianceNotice ?? null,
         dominantPollutant: aqiResult.dominantPollutant,
-        category: aqiResult.category,
+        category: aqiResult.isValidStandard ? aqiResult.category : 'Unavailable',
         temperatureC: liveWeather ? liveWeather.weather.temperatureC : null,
         humidityPercent: liveWeather ? liveWeather.weather.humidityPercent : null,
         windSpeedKmh: liveWeather ? liveWeather.weather.windSpeedKmh : null,
@@ -356,113 +365,123 @@ export class AirQualityProvider {
     standard: 'CPCB' | 'EPA'
   ): Promise<UrbanZoneTelemetry | null> {
     const apiKey = process.env.OPENAQ_API_KEY;
-    if (!apiKey || apiKey.trim() === '' || apiKey.includes('your_openaq_api_key')) {
-      return null;
-    }
+    if (!apiKey || apiKey.trim() === '' || apiKey.includes('your_openaq_api_key')) return null;
 
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 4000);
+    const timeout = setTimeout(() => controller.abort(), 7000);
+    const headers = { 'X-API-Key': apiKey, 'Accept': 'application/json' };
 
     try {
-      const url = `https://api.openaq.org/v3/locations?coordinates=${zone.latitude},${zone.longitude}&radius=25000&limit=1`;
-      const response = await fetch(url, {
-        headers: {
-          'X-API-Key': apiKey,
-          'Accept': 'application/json'
-        },
-        signal: controller.signal
-      });
-      clearTimeout(timeout);
+      const locationUrl =
+        'https://api.openaq.org/v3/locations?coordinates=' + zone.latitude + ',' + zone.longitude +
+        '&radius=25000&limit=100&monitor=true';
+      const locationResponse = await fetch(locationUrl, { headers, signal: controller.signal });
+      if (!locationResponse.ok) return null;
 
-      if (!response.ok) return null;
+      const locationResult = OpenAQV3LocationsSchema.safeParse(await locationResponse.json());
+      const candidates = (locationResult.success ? locationResult.data.results ?? [] : [])
+        .filter(location =>
+          location.isMonitor !== false &&
+          typeof location.coordinates.latitude === 'number' &&
+          typeof location.coordinates.longitude === 'number' &&
+          (location.sensors?.length ?? 0) > 0
+        );
+      const distanceKm = (lat: number, lon: number) =>
+        Math.hypot((lat - zone.latitude) * 111, (lon - zone.longitude) * 111 * Math.cos(zone.latitude * Math.PI / 180));
+      candidates.sort((a,b) =>
+        distanceKm(a.coordinates.latitude as number,a.coordinates.longitude as number) -
+        distanceKm(b.coordinates.latitude as number,b.coordinates.longitude as number)
+      );
+      const location = candidates[0];
+      if (!location) return null;
 
-      const rawJson = await response.json();
-      const parsed = OpenAQV3LocationsSchema.safeParse(rawJson);
-      if (!parsed.success || !parsed.data.results || parsed.data.results.length === 0) {
-        return null;
-      }
+      // The locations resource returns sensor metadata, not measurement values.
+      const latestResponse = await fetch(
+        'https://api.openaq.org/v3/locations/' + location.id + '/latest?limit=100&page=1',
+        { headers, signal: controller.signal }
+      );
+      if (!latestResponse.ok) return null;
+      const latestResult = OpenAQLatestSchema.safeParse(await latestResponse.json());
+      if (!latestResult.success || !latestResult.data.results?.length) return null;
 
-      const location = parsed.data.results[0]!;
-      const sensors = location.sensors || [];
-      const readings: PollutantReading[] = [];
-
-      for (const sensor of sensors) {
-        const pName = sensor.parameter.name.toLowerCase();
-        const val = sensor.value;
-        if (typeof val !== 'number' || isNaN(val) || val < 0) continue;
-
-        if (pName === 'pm25' || pName === 'pm2.5') {
-          readings.push({ pollutant: 'pm25', concentration: Math.round(val * 10) / 10, unit: 'µg/m³' });
-        } else if (pName === 'pm10') {
-          readings.push({ pollutant: 'pm10', concentration: Math.round(val * 10) / 10, unit: 'µg/m³' });
-        } else if (pName === 'no2') {
-          readings.push({ pollutant: 'no2', concentration: Math.round(val * 10) / 10, unit: 'µg/m³' });
-        } else if (pName === 'co') {
-          const coMg = sensor.parameter.units === 'ppm' ? Math.round(val * 1.15 * 10) / 10 : Math.round((val / 1000) * 10) / 10;
-          readings.push({ pollutant: 'co', concentration: coMg, unit: 'mg/m³' });
-        } else if (pName === 'o3') {
-          readings.push({ pollutant: 'o3', concentration: Math.round(val * 10) / 10, unit: 'µg/m³' });
-        } else if (pName === 'so2') {
-          readings.push({ pollutant: 'so2', concentration: Math.round(val * 10) / 10, unit: 'µg/m³' });
+      const sensors = new Map((location.sensors ?? []).map(sensor => [sensor.id,sensor]));
+      const latest = new Map<PollutantType,{concentration:number;measuredAt:string}>();
+      const now = Date.now();
+      const maxAgeMs = 6 * 60 * 60 * 1000;
+      const normalizeUnit = (unit: string) => unit.toLowerCase().replace(/[μµ]/g,'u').replace(/³/g,'3').replace(/\s/g,'');
+      for (const record of latestResult.data.results) {
+        if (record.locationsId !== location.id) continue;
+        const sensor = sensors.get(record.sensorsId);
+        if (!sensor || !Number.isFinite(record.value) || record.value < 0) continue;
+        const stamp = Date.parse(record.datetime.utc);
+        if (!Number.isFinite(stamp) || stamp > now + 5 * 60 * 1000 || now - stamp > maxAgeMs) continue;
+        const parameter = sensor.parameter.name.toLowerCase().replace(/\s/g,'');
+        const unit = normalizeUnit(sensor.parameter.units);
+        let pollutant: PollutantType | null = null;
+        let concentration: number | null = null;
+        if (parameter === 'pm25' || parameter === 'pm2.5' || parameter === 'pm2_5') {
+          pollutant = 'pm25'; if (unit === 'ug/m3') concentration = record.value;
+        } else if (parameter === 'pm10') {
+          pollutant = 'pm10'; if (unit === 'ug/m3') concentration = record.value;
+        } else if (parameter === 'no2' || parameter === 'nitrogendioxide') {
+          pollutant = 'no2'; if (unit === 'ug/m3') concentration = record.value;
+        } else if (parameter === 'co' || parameter === 'carbonmonoxide') {
+          pollutant = 'co';
+          if (unit === 'mg/m3') concentration = record.value;
+          else if (unit === 'ug/m3') concentration = record.value / 1000;
+        } else if (parameter === 'o3' || parameter === 'ozone') {
+          pollutant = 'o3'; if (unit === 'ug/m3') concentration = record.value;
+        } else if (parameter === 'so2' || parameter === 'sulfurdioxide' || parameter === 'sulphurdioxide') {
+          pollutant = 'so2'; if (unit === 'ug/m3') concentration = record.value;
+        }
+        if (!pollutant || concentration === null || !Number.isFinite(concentration)) continue;
+        const old = latest.get(pollutant);
+        if (!old || stamp > Date.parse(old.measuredAt)) {
+          latest.set(pollutant,{concentration:Math.round(concentration*100)/100,measuredAt:record.datetime.utc});
         }
       }
+      if (!latest.size) return null;
 
-      if (readings.length === 0) return null;
-
-      const aqiResult = calculateOverallAQI(readings, standard);
-
-      const makeDetail = (code: PollutantType, name: string, unit: string, health: string): PollutantDetail => {
-        const found = readings.find(r => r.pollutant === code);
-        const conc = found?.concentration ?? 0;
-        const sub = aqiResult.subIndices.find(s => s.pollutant === code);
+      const readings: PollutantReading[] = Array.from(latest.entries()).map(([pollutant,r]) => ({
+        pollutant, concentration:r.concentration, unit:pollutant === 'co' ? 'mg/m³' : 'µg/m³'
+      }));
+      const aqi = calculateOverallAQI(readings,standard);
+      const detail = (code:PollutantType,name:string,unit:string,health:string):PollutantDetail => {
+        const reading=latest.get(code);
+        const sub=aqi.subIndices.find(x=>x.pollutant===code);
         return {
-          code,
-          name,
-          concentration: conc,
-          unit,
-          subIndex: sub?.subIndex ?? 0,
-          category: sub?.category ?? 'Good',
-          healthImplications: health,
-          hourlyTrend: []
+          code,name,concentration:reading?.concentration ?? null,unit,
+          subIndex:sub?.subIndex ?? null,category:sub?.category ?? 'Unavailable',
+          measuredAt:reading?.measuredAt ?? null,healthImplications:health,hourlyTrend:[]
         };
       };
-
-      const pollutants: Record<PollutantType, PollutantDetail> = {
-        pm25: makeDetail('pm25', 'Fine Particulates (PM2.5)', 'µg/m³', 'Microscopic particles penetrating deep into bronchial passages.'),
-        pm10: makeDetail('pm10', 'Coarse Particulates (PM10)', 'µg/m³', 'Inhalable coarse particles provoking upper respiratory irritation.'),
-        no2: makeDetail('no2', 'Nitrogen Dioxide (NO2)', 'µg/m³', 'Combustion byproduct provoking acute airway inflammation.'),
-        co: makeDetail('co', 'Carbon Monoxide (CO)', 'mg/m³', 'Combustion gas reducing oxygen carriage capacity.'),
-        o3: makeDetail('o3', 'Ground-Level Ozone (O3)', 'µg/m³', 'Photochemical oxidant provoking respiratory constriction.'),
-        so2: makeDetail('so2', 'Sulfur Dioxide (SO2)', 'µg/m³', 'Industrial gas triggering bronchoconstriction.')
+      const pollutants:Record<PollutantType,PollutantDetail> = {
+        pm25:detail('pm25','Fine Particulates (PM2.5)','µg/m³','Fine particles that can penetrate deep into the lungs.'),
+        pm10:detail('pm10','Coarse Particulates (PM10)','µg/m³','Inhalable particles that can irritate the respiratory tract.'),
+        no2:detail('no2','Nitrogen Dioxide (NO2)','µg/m³','Combustion-related pollutant that can irritate airways.'),
+        co:detail('co','Carbon Monoxide (CO)','mg/m³','Combustion gas that reduces oxygen transport in blood.'),
+        o3:detail('o3','Ground-Level Ozone (O3)','µg/m³','Photochemical pollutant that can irritate the respiratory system.'),
+        so2:detail('so2','Sulfur Dioxide (SO2)','µg/m³','Combustion and industrial pollutant that can irritate airways.')
       };
-
-      const measuredAt = location.datetimeLast?.utc || new Date().toISOString();
-
+      const newest = Math.max(...Array.from(latest.values()).map(x=>Date.parse(x.measuredAt)));
       return {
-        zoneId: zone.id,
-        name: `${zone.name} (${location.name})`,
-        city: zone.city,
-        latitude: location.coordinates.latitude,
-        longitude: location.coordinates.longitude,
-        overallAQI: aqiResult.overallAQI,
-        dominantPollutant: aqiResult.dominantPollutant,
-        category: aqiResult.category,
-        temperatureC: null,
-        humidityPercent: null,
-        windSpeedKmh: null,
-        isInversionActive: null,
-        weatherSource: null,
-        weatherMeasuredAt: null,
-        pollutants,
-        measuredAt,
-        dataProvider: `OpenAQ Ground Station: ${location.name}`,
-        isDemoData: false,
-        dataOrigin: 'live_station',
-        freshnessMinutes: Math.max(0, Math.round((Date.now() - new Date(measuredAt).getTime()) / 60000))
+        zoneId:zone.id,name:zone.name+' ('+(location.name || 'OpenAQ monitor')+')',city:zone.city,
+        latitude:location.coordinates.latitude as number,longitude:location.coordinates.longitude as number,
+        overallAQI:aqi.overallAQI,aqiIsValid:aqi.isValidStandard,aqiBasis:'instantaneous_estimate',
+        aqiComplianceNotice:aqi.standardComplianceNotice ?? null,
+        dominantPollutant:aqi.dominantPollutant,
+        category:aqi.isValidStandard ? aqi.category : 'Unavailable',
+        temperatureC:null,humidityPercent:null,windSpeedKmh:null,isInversionActive:null,
+        weatherSource:null,weatherMeasuredAt:null,pollutants,
+        measuredAt:new Date(newest).toISOString(),
+        dataProvider:'OpenAQ v3 Ground Station: '+(location.name || 'Monitoring location'),
+        isDemoData:false,dataOrigin:'live_station',
+        freshnessMinutes:Math.max(0,Math.round((now-newest)/60000))
       };
     } catch {
-      clearTimeout(timeout);
       return null;
+    } finally {
+      clearTimeout(timeout);
     }
   }
 
@@ -622,8 +641,11 @@ export class AirQualityProvider {
         latitude: zone.latitude,
         longitude: zone.longitude,
         overallAQI: aqiResult.overallAQI,
+        aqiIsValid: aqiResult.isValidStandard,
+        aqiBasis: 'scenario',
+        aqiComplianceNotice: aqiResult.standardComplianceNotice ?? null,
         dominantPollutant: aqiResult.dominantPollutant,
-        category: aqiResult.category,
+        category: aqiResult.isValidStandard ? aqiResult.category : 'Unavailable',
         temperatureC: tempBase + (idx % 2 === 0 ? 1 : -1),
         humidityPercent: humidityBase,
         windSpeedKmh: windBase,

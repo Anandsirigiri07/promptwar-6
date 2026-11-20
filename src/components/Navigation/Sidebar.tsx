@@ -98,15 +98,15 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
             </div>
             <div className="flex items-baseline justify-between">
               <span className="text-xl font-bold text-forest-900">
-                {selectedZone ? `${selectedZone.overallAQI} AQI` : '--'}
+                {selectedZone ? (selectedZone.aqiIsValid === false ? 'AQI unavailable' : `${selectedZone.aqiBasis === 'instantaneous_estimate' ? 'Indicative AQI' : selectedZone.aqiBasis === 'scenario' ? 'Scenario AQI' : 'AQI'} ${selectedZone.overallAQI}`) : '--'}
               </span>
               <span className="text-xs font-semibold text-forest-700">
-                {selectedZone?.category || 'Moderate'}
+                {selectedZone?.aqiIsValid === false ? 'Insufficient data' : selectedZone?.category || 'Unavailable'}
               </span>
             </div>
             <div className="mt-2 text-[11px] text-forest-500 flex items-center justify-between">
               <span>Dominant: {selectedZone?.dominantPollutant.toUpperCase()}</span>
-              <span>{selectedZone?.temperatureC}°C</span>
+              <span>{selectedZone?.temperatureC !== null && selectedZone?.temperatureC !== undefined ? `${selectedZone.temperatureC}°C` : 'Weather N/A'}</span>
             </div>
           </div>
         </div>

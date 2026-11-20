@@ -7,10 +7,11 @@ import { PollutantType, AQICategory } from '../lib/compute/aqiBreakpoints.js';
 export interface PollutantDetail {
   code: PollutantType;
   name: string;
-  concentration: number;
+  concentration: number | null;
   unit: string;
-  subIndex: number;
-  category: AQICategory;
+  subIndex: number | null;
+  category: AQICategory | 'Unavailable';
+  measuredAt?: string | null;
   healthImplications: string;
   hourlyTrend: number[]; // Last 7 hours
 }
@@ -22,6 +23,11 @@ export interface UrbanZoneTelemetry {
   latitude: number;
   longitude: number;
   overallAQI: number;
+  /** False when the available pollutant set does not satisfy the selected AQI standard. */
+  aqiIsValid?: boolean;
+  /** Live single-time readings are indicative only; regulatory averaging periods are not verified. */
+  aqiBasis?: 'instantaneous_estimate' | 'scenario';
+  aqiComplianceNotice?: string | null;
   dominantPollutant: PollutantType;
   category: AQICategory;
   temperatureC: number | null;

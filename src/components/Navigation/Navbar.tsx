@@ -75,7 +75,9 @@ export const Navbar: React.FC<NavbarProps> = ({ onToggleSidebar, isSidebarOpen }
                 {selectedZone.name.split('&')[0]}
               </span>
               <span className="text-[11px] text-forest-600">
-                AQI {selectedZone.overallAQI} ({selectedZone.category})
+                {selectedZone.aqiIsValid === false
+                  ? 'AQI unavailable (insufficient pollutant coverage)'
+                  : `${selectedZone.aqiBasis === 'instantaneous_estimate' ? 'Indicative AQI' : selectedZone.aqiBasis === 'scenario' ? 'Scenario AQI' : 'AQI'} ${selectedZone.overallAQI} (${selectedZone.category})`}
               </span>
             </div>
           )}

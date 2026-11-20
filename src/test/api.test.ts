@@ -2,6 +2,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import type { Request, Response, NextFunction } from 'express';
 import { getHealthStatus } from '../../server/routes/health.js';
 import { AirQualityProvider } from '../../server/services/airQualityProvider.js';
+import { MeteorologyProvider } from '../../server/services/meteorologyProvider.js';
 import { calculateCommuteDose } from '../../src/lib/compute/commuteDose.js';
 import { calculateRoomIAQ } from '../../src/lib/compute/cadrCalculations.js';
 import { requireAuth, type AuthenticatedRequest } from '../../server/middleware/authentication.js';
@@ -223,7 +224,7 @@ describe('Backend API Route & Middleware Unit Tests (In-Memory)', () => {
     expect(routineNoPM25.estimatedTotalDoseReductionUg).toBeNull();
     expect(routineNoPM25.doseReductionExplanation).toContain('unavailable');
 
-    // 2. With verified physical PM2.5, dose is computed scientifically
+    // 2. A concentration alone is insufficient for a defensible personalized daily total
     const routineWithPM25 = AIService.generateDeterministicRoutine({
       persona: 'child',
       city: 'Delhi',
@@ -233,8 +234,8 @@ describe('Backend API Route & Middleware Unit Tests (In-Memory)', () => {
       language: 'en'
     });
 
-    expect(routineWithPM25.estimatedTotalDoseReductionUg).toBeGreaterThan(0);
-    expect(routineWithPM25.doseReductionExplanation).toContain('120 µg/m³');
+    expect(routineWithPM25.estimatedTotalDoseReductionUg).toBeNull();
+    expect(routineWithPM25.doseReductionExplanation).toContain('not calculated');
 
     const advisory = await AIService.generateEmergencyAdvisory({
       city: 'Delhi',
@@ -337,7 +338,7 @@ describe('Backend API Route & Middleware Unit Tests (In-Memory)', () => {
     expect(explainResult.data?.estimatedInhaledDose_ug).toBeNull();
     expect(explainResult.data?.effectivePM25Concentration_ugm3).toBeNull();
 
-    // 2. When verified physical PM2.5 concentration is provided directly
+    // 2. When a client-provided PM2.5 concentration is supplied
     let explainWithPM25: { success?: boolean; data?: { isAvailable?: boolean; estimatedInhaledDose_ug?: number | null; effectivePM25Concentration_ugm3?: number | null } } = {};
     const reqWithPM25 = {
       body: {
@@ -404,4 +405,129 @@ describe('Backend API Route & Middleware Unit Tests (In-Memory)', () => {
       process.env.OPENAQ_API_KEY = originalKey;
     }
   });
+
+  it('OpenAQ v3 reads the location-latest endpoint, preserves missing pollutants, and uses source timestamps', async () => {
+    const originalKey = process.env.OPENAQ_API_KEY;
+    process.env.OPENAQ_API_KEY = 'test-openaq-key';
+    const measuredAt = new Date().toISOString();
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes('/v3/locations?')) {
+        return new Response(JSON.stringify({
+          results: [{
+            id: 77,
+            name: 'Example CPCB Monitor',
+            isMonitor: true,
+            coordinates: { latitude: 28.6469, longitude: 77.3160 },
+            sensors: [
+              { id: 701, parameter: { name: 'pm25', units: 'µg/m³' } },
+              { id: 702, parameter: { name: 'pm10', units: 'µg/m³' } },
+              { id: 703, parameter: { name: 'no2', units: 'µg/m³' } }
+            ]
+          }]
+        }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+      }
+      return new Response(JSON.stringify({
+        results: [
+          { datetime: { utc: measuredAt, local: measuredAt }, value: 42, coordinates: { latitude: 28.6469, longitude: 77.3160 }, sensorsId: 701, locationsId: 77 },
+          { datetime: { utc: measuredAt, local: measuredAt }, value: 88, coordinates: { latitude: 28.6469, longitude: 77.3160 }, sensorsId: 702, locationsId: 77 },
+          { datetime: { utc: measuredAt, local: measuredAt }, value: 31, coordinates: { latitude: 28.6469, longitude: 77.3160 }, sensorsId: 703, locationsId: 77 }
+        ]
+      }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    try {
+      const zone: UrbanZoneDefinition = {
+        id: 'delhi-example',
+        name: 'Example Sector',
+        city: 'Delhi',
+        latitude: 28.6469,
+        longitude: 77.3160
+      };
+      const result = await AirQualityProvider.fetchLiveOpenAQZone(zone, 'CPCB');
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect(String(fetchMock.mock.calls[1]?.[0])).toContain('/v3/locations/77/latest');
+      expect(result?.dataOrigin).toBe('live_station');
+      expect(result?.pollutants.pm25.concentration).toBe(42);
+      expect(result?.pollutants.pm10.concentration).toBe(88);
+      expect(result?.pollutants.no2.concentration).toBe(31);
+      expect(result?.pollutants.o3.concentration).toBeNull();
+      expect(result?.pollutants.o3.category).toBe('Unavailable');
+      expect(result?.aqiIsValid).toBe(true);
+      expect(result?.measuredAt).toBe(measuredAt);
+    } finally {
+      vi.unstubAllGlobals();
+      if (originalKey === undefined) delete process.env.OPENAQ_API_KEY;
+      else process.env.OPENAQ_API_KEY = originalKey;
+    }
+  });
+
+
+  it('realtime meteorology stays unavailable when Open-Meteo fails instead of using a demo profile', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('', { status: 503 })));
+    try {
+      const weather = await MeteorologyProvider.getCurrentWeatherAsync('zone-delhi-1', 'realtime', 28.61, 77.20);
+      expect(weather).toBeNull();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('uses the current hour index for inversion data and leaves inversion unknown with incomplete soundings', async () => {
+    const originalFetch = globalThis.fetch;
+    const currentTime = '2026-11-20T12:00';
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({
+      current: {
+        time: currentTime,
+        temperature_2m: 18,
+        relative_humidity_2m: 60,
+        wind_speed_10m: 5
+      },
+      hourly: {
+        time: ['2026-11-20T00:00', currentTime],
+        boundary_layer_height: [800, 320],
+        temperature_1000hPa: [14, 16],
+        temperature_850hPa: [11, 19]
+      }
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } })));
+    try {
+      const result = await MeteorologyProvider.fetchLiveWeatherForCoordinatesAsync(28.61, 77.20);
+      expect(result?.weather.boundaryLayerHeightMeters).toBe(320);
+      expect(result?.weather.surfaceTemperatureC).toBe(16);
+      expect(result?.weather.aloftTemperatureC).toBe(19);
+      expect(typeof result?.isInversionActive).toBe('boolean');
+    } finally {
+      vi.unstubAllGlobals();
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it('does not classify an inversion when only one pressure-level temperature is available', async () => {
+    const originalFetch = globalThis.fetch;
+    const currentTime = '2026-11-20T12:00';
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({
+      current: {
+        time: currentTime,
+        temperature_2m: 18,
+        relative_humidity_2m: 60,
+        wind_speed_10m: 5
+      },
+      hourly: {
+        time: [currentTime],
+        temperature_1000hPa: [16]
+      }
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } })));
+    try {
+      const result = await MeteorologyProvider.fetchLiveWeatherForCoordinatesAsync(28.61, 77.20);
+      expect(result).not.toBeNull();
+      expect(result?.weather.surfaceTemperatureC).toBe(16);
+      expect(result?.weather.aloftTemperatureC).toBeUndefined();
+      expect(result?.isInversionActive).toBeNull();
+    } finally {
+      vi.unstubAllGlobals();
+      globalThis.fetch = originalFetch;
+    }
+  });
+
 });

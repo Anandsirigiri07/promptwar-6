@@ -30,7 +30,6 @@ export interface ActivityScheduleItem {
   scientificReasoning: string;
   relevantPollutants: string[];
   saferAlternative: string;
-  estimatedInhaledDoseReductionPercent?: number;
   actionableStep: string;
 }
 

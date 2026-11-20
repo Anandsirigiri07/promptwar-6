@@ -53,6 +53,6 @@ export const EmergencyAdvisoryRequestSchema = z.object({
   city: z.string().min(1).max(100),
   aqi: z.number().min(0).max(1000),
   dominantPollutant: z.string().min(1).max(20).default('pm25'),
-  inversionStrength: z.enum(['None', 'Weak', 'Moderate', 'Severe']).default('Moderate'),
+  inversionStrength: z.enum(['None', 'Weak', 'Moderate', 'Severe', 'Unknown']).default('Unknown'),
   language: z.enum(['en', 'hi', 'kn', 'ar', 'es']).default('en')
 });

@@ -36,15 +36,20 @@ export const AdvisoriesPage: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
 
   const loadAdvisory = async () => {
+    if (!selectedZone || selectedZone.aqiIsValid === false) {
+      setAdvisory(null);
+      setIsLoading(false);
+      return;
+    }
     setIsLoading(true);
     try {
       const res = await apiRequest<any>('/api/emergency-advisory', {
         method: 'POST',
         body: JSON.stringify({
           city: preferences.city,
-          aqi: selectedZone?.overallAQI || 285,
-          dominantPollutant: selectedZone?.dominantPollutant || 'pm25',
-          inversionStrength: selectedZone?.isInversionActive === true ? 'Moderate' : selectedZone?.isInversionActive === false ? 'None' : 'Moderate',
+          aqi: selectedZone.overallAQI,
+          dominantPollutant: selectedZone.dominantPollutant,
+          inversionStrength: selectedZone.isInversionActive === true ? 'Moderate' : selectedZone.isInversionActive === false ? 'None' : 'Unknown',
           language: preferences.language
         })
       });
@@ -58,7 +63,7 @@ export const AdvisoriesPage: React.FC = () => {
 
   useEffect(() => {
     loadAdvisory();
-  }, [preferences.language, selectedZone?.overallAQI]);
+  }, [preferences.language, selectedZone?.overallAQI, selectedZone?.aqiIsValid]);
 
   return (
     <div className="space-y-8 py-2 max-w-5xl mx-auto">
@@ -70,14 +75,14 @@ export const AdvisoriesPage: React.FC = () => {
           </div>
           <div>
             <span className="text-xs font-bold text-red-800 uppercase tracking-wider block">
-              Severe Smog Inversion Briefing
+              City Air-Quality Briefing
             </span>
             <h1 className="text-xl sm:text-2xl font-black text-red-950">
-              {advisory?.headline || 'High Particulate Inversion Emergency Warning'}
+              {advisory?.headline || 'Current air-quality advisory unavailable'}
             </h1>
             <p className="text-xs text-red-800 mt-1">
-              Active AQI: <strong className="font-mono">{selectedZone?.overallAQI || 285}</strong> • Sector:{' '}
-              {selectedZone?.name || 'Metropolitan Core'}
+              {selectedZone?.aqiBasis === 'instantaneous_estimate' ? 'Indicative AQI' : selectedZone?.aqiBasis === 'scenario' ? 'Scenario AQI' : 'AQI'}: <strong className="font-mono">{selectedZone?.aqiIsValid === false ? 'Unavailable' : selectedZone?.overallAQI ?? 'Unavailable'}</strong> • Sector:{' '}
+              {selectedZone?.name || 'Select a zone'}
             </p>
           </div>
         </div>

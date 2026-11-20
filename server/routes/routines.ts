@@ -41,18 +41,16 @@ routinesRouter.post(
       let pm25Source = 'Unavailable';
       let isDerived = false;
 
-      // 1. Prefer direct verified physical PM2.5 concentration
-      if (typeof ambientPM25 === 'number' && !isNaN(ambientPM25) && ambientPM25 >= 0) {
+      // Request fields originate in the browser and are not independently verified here.
+      // Never label a client-provided concentration as a confirmed station measurement.
+      if (typeof ambientPM25 === 'number' && Number.isFinite(ambientPM25) && ambientPM25 >= 0) {
         effectivePM25 = ambientPM25;
-        pm25Source = 'Direct station/provider PM2.5 measurement';
-        isDerived = false;
-      }
-      // 2. Invert explicit PM2.5 sub-index if provided
-      else if (typeof pm25SubIndex === 'number' && !isNaN(pm25SubIndex) && pm25SubIndex >= 0) {
+        pm25Source = 'Client-provided PM2.5 value (source not independently verified by server)';
+      } else if (typeof pm25SubIndex === 'number' && Number.isFinite(pm25SubIndex) && pm25SubIndex >= 0) {
         const inverted = invertPM25SubIndex(pm25SubIndex, standard || 'CPCB');
         if (inverted !== null) {
           effectivePM25 = inverted;
-          pm25Source = `Derived from explicit PM2.5 sub-index using ${standard || 'CPCB'} piecewise linear interpolation`;
+          pm25Source = `Client-provided PM2.5 sub-index, converted using ${standard || 'CPCB'} breakpoints (not source-verified)`;
           isDerived = true;
         }
       }
@@ -71,7 +69,7 @@ routinesRouter.post(
             isAvailable: false,
             isMasked,
             explanation: `Inhaled PM2.5 particulate mass dose cannot be determined from overall AQI alone (${currentAQI ?? 'unknown'}). Overall AQI is determined by the highest sub-index among all criteria pollutants (PM10, NO2, SO2, CO, O3) and does not identify PM2.5 mass concentration. Direct PM2.5 concentration (µg/m³) or explicit PM2.5 sub-index is required for physical inhalation calculations.`,
-            methodology: 'Inhaled Dose = PM2.5 (µg/m³) × Duration (h) × Respiration Rate (m³/h) × (1 - Filtration Efficiency)'
+            methodology: `Illustrative inhaled mass = concentration × duration × assumed ventilation rate × assumed penetration fraction. Assumptions: ${ventilationRate} m³/h ventilation and ${penetration} penetration. No individual physiology, particle deposition or measured respirator fit is represented.`
           }
         });
         return;
@@ -93,9 +91,7 @@ routinesRouter.post(
           isAvailable: true,
           estimatedInhaledDose_ug: inhaledDose,
           isMasked,
-          explanation: `During ${durationMinutes} mins of ${activity} (${locationType}) under ${effectivePM25} µg/m³ PM2.5, an estimated ${inhaledDose} µg of particulates enters the pulmonary tract. ${
-            isMasked ? 'Wearing an N95 respirator reduced your particulate intake by ~90%.' : 'An N95 respirator or indoor filtered air can reduce lung intake by 60%–90%.'
-          }`,
+          explanation: `Illustrative scenario estimate for ${durationMinutes} minutes of ${activity} (${locationType}) using ${effectivePM25} µg/m³ PM2.5. Source: ${pm25Source}. The simplified result (${inhaledDose} µg) assumes a generic breathing rate and fixed penetration factor; it is not a personal measurement, lung-deposited dose or clinical outcome. N95 benefit depends on respirator quality, fit and consistent use.`,
           methodology: 'Inhaled Dose = PM2.5 (µg/m³) × Duration (h) × Respiration Rate (m³/h) × (1 - Filtration Efficiency)'
         }
       });

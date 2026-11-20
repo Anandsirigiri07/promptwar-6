@@ -12,15 +12,21 @@ interface AqiBadgeProps {
   category: AQICategory;
   size?: 'sm' | 'md' | 'lg';
   showCategoryText?: boolean;
+  isValid?: boolean;
+  basis?: 'instantaneous_estimate' | 'scenario';
 }
 
 export const AqiBadge: React.FC<AqiBadgeProps> = ({
   aqi,
   category,
   size = 'md',
-  showCategoryText = true
+  showCategoryText = true,
+  isValid = true,
+  basis
 }) => {
-  const colorHex = getAQIColorHex(aqi, 'CPCB');
+  const colorHex = isValid ? getAQIColorHex(aqi, 'CPCB') : '#64748B';
+  const indexLabel = basis === 'instantaneous_estimate' ? 'Indicative AQI' : basis === 'scenario' ? 'Scenario AQI' : 'AQI';
+  const accessibleIndexLabel = basis === 'instantaneous_estimate' ? 'Indicative AQI' : basis === 'scenario' ? 'Scenario AQI' : 'Air Quality Index';
 
   const sizeClasses = {
     sm: 'text-xs px-2 py-0.5',
@@ -37,17 +43,17 @@ export const AqiBadge: React.FC<AqiBadgeProps> = ({
         color: colorHex
       }}
       role="status"
-      aria-label={`Air Quality Index: ${aqi}, Category: ${category}`}
+      aria-label={isValid ? `${accessibleIndexLabel}: ${aqi}, Category: ${category}` : 'Air Quality Index unavailable because pollutant coverage is incomplete'}
     >
       <span
         className="w-2 h-2 rounded-full inline-block shrink-0"
         style={{ backgroundColor: colorHex }}
         aria-hidden="true"
       />
-      <span className="font-semibold">{aqi} AQI</span>
+      <span className="font-semibold">{isValid ? `${aqi} ${indexLabel}` : 'AQI unavailable'}</span>
       {showCategoryText && (
         <span className="text-forest-700 font-normal border-l border-forest-200 pl-1.5">
-          {category}
+          {isValid ? category : 'Insufficient data'}
         </span>
       )}
     </span>

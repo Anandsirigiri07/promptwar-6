@@ -19,9 +19,18 @@ export function useExposureRouting() {
     origin: string;
     destination: string;
     distanceKm: number;
-    ambientPM25: number;
+    ambientPM25: number | null;
     hasN95Mask: boolean;
   }) => {
+    if (params.ambientPM25 === null || !Number.isFinite(params.ambientPM25)) {
+      setComparisons([]);
+      setExposureOptimizedRoute(null);
+      setTradeoffSummary('Commute exposure estimates are unavailable because no valid PM2.5 concentration is available for the selected zone.');
+      setError('PM2.5 data unavailable. No exposure estimate has been generated.');
+      setIsCalculating(false);
+      return;
+    }
+
     setIsCalculating(true);
     setError(null);
     try {

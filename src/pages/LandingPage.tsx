@@ -68,7 +68,7 @@ export const LandingPage: React.FC = () => {
               <span className="text-xs text-forest-500 font-medium block">Active City Sector</span>
               <span className="text-sm font-bold text-forest-900">{selectedZone.name}</span>
             </div>
-            <AqiBadge aqi={selectedZone.overallAQI} category={selectedZone.category} size="md" />
+            <AqiBadge aqi={selectedZone.overallAQI} category={selectedZone.category} size="md" isValid={selectedZone.aqiIsValid !== false} basis={selectedZone.aqiBasis} />
           </div>
         )}
       </section>

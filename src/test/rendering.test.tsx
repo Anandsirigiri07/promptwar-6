@@ -17,6 +17,16 @@ describe('UI Component Rendering & Accessibility Attributes', () => {
     expect(screen.getByText('185 AQI')).toBeInTheDocument();
   });
 
+  it('renders an unavailable AQI badge when monitored pollutant coverage is incomplete', () => {
+    render(<AqiBadge aqi={185} category="Unavailable" isValid={false} />);
+    expect(screen.getByRole('status')).toHaveTextContent('AQI unavailable');
+    expect(screen.getByRole('status')).toHaveTextContent('Insufficient data');
+    expect(screen.getByRole('status')).toHaveAttribute(
+      'aria-label',
+      'Air Quality Index unavailable because pollutant coverage is incomplete'
+    );
+  });
+
   it('renders PollutantSparkline with screen-reader text fallback', () => {
     render(
       <PollutantSparkline
@@ -80,5 +90,11 @@ describe('UI Component Rendering & Accessibility Attributes', () => {
     expect(screen.getByText(/AI Daily Routine/i)).toBeInTheDocument();
     expect(screen.getByText(/Transit Optimizer/i)).toBeInTheDocument();
     expect(screen.getByText(/Indoor Quality & DIY/i)).toBeInTheDocument();
+  });
+
+  it('labels current-snapshot indexes as indicative instead of official AQI', () => {
+    render(<AqiBadge aqi={185} category="Moderate" basis="instantaneous_estimate" />);
+    expect(screen.getByRole('status')).toHaveTextContent('185 Indicative AQI');
+    expect(screen.getByRole('status')).toHaveAttribute('aria-label', 'Indicative AQI: 185, Category: Moderate');
   });
 });

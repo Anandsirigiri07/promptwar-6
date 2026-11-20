@@ -9,7 +9,7 @@ export interface CommuteComparisonReport {
   origin: string;
   destination: string;
   distanceKm: number;
-  ambientAQI: number;
+  ambientPM25: number;
   modeComparisons: CommuteDoseOutput[];
   recommendedMode: CommuteMode;
   pathOptimization?: PlannedPathResult;

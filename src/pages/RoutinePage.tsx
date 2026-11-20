@@ -23,7 +23,7 @@ export const RoutinePage: React.FC = () => {
   const [sleepTime, setSleepTime] = useState('22:00');
   const [isGenerating, setIsGenerating] = useState(false);
   const [routine, setRoutine] = useState<DailyPersonalizedRoutine | null>(null);
-  const [, setError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   // Exposure Explainer Modal/State
   const [customActivity, setCustomActivity] = useState('');
@@ -41,11 +41,19 @@ export const RoutinePage: React.FC = () => {
 
   const handleGenerateRoutine = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
+    if (!selectedZone) {
+      setError('Air-quality data is not available yet. Select a city zone before generating a routine.');
+      return;
+    }
+    if (selectedZone.aqiIsValid === false) {
+      setError(selectedZone.aqiComplianceNotice || 'The selected zone does not have enough monitored pollutants to calculate a valid AQI. A routine has not been generated from a placeholder value.');
+      return;
+    }
     setIsGenerating(true);
     setError(null);
 
-    const aqi = selectedZone ? selectedZone.overallAQI : 165;
-    const dominant = selectedZone ? selectedZone.dominantPollutant : 'pm25';
+    const aqi = selectedZone.overallAQI;
+    const dominant = selectedZone.dominantPollutant;
 
     try {
       const data = await apiRequest<DailyPersonalizedRoutine>('/api/routine-insights', {
@@ -87,9 +95,9 @@ export const RoutinePage: React.FC = () => {
           activity: customActivity,
           durationMinutes: customDuration,
           locationType: customLocation,
-          currentAQI: selectedZone?.overallAQI || 160,
-          ambientPM25: selectedZone?.pollutants?.pm25?.concentration,
-          pm25SubIndex: selectedZone?.pollutants?.pm25?.subIndex,
+          currentAQI: selectedZone?.aqiIsValid === false ? undefined : selectedZone?.overallAQI,
+          ambientPM25: selectedZone?.pollutants?.pm25?.concentration ?? undefined,
+          pm25SubIndex: selectedZone?.pollutants?.pm25?.subIndex ?? undefined,
           standard: preferences.aqiStandard,
           isMasked: customMasked,
           language: preferences.language
@@ -112,14 +120,19 @@ export const RoutinePage: React.FC = () => {
         <div className="flex items-center gap-2">
           <CalendarClock className="w-7 h-7 text-sage-600" />
           <h1 className="text-2xl sm:text-3xl font-extrabold text-forest-900 tracking-tight">
-            GenAI Daily Routine & Inhaled Dose Optimizer
+            GenAI Daily Routine Planner
           </h1>
         </div>
         <p className="text-sm text-forest-600">
-          Synthesizes morning thermal inversion soundings, peak diesel traffic curves, and physiological
-          minute-ventilation rates to structure a safer daily schedule.
+          Uses your selected zone's air-quality context and household persona to organize practical lower-exposure choices. Recommendations are not medical advice; use current local readings for time-sensitive decisions.
         </p>
       </div>
+
+      {error && (
+        <div className="p-3 rounded-xl border border-amber-300 bg-amber-50 text-amber-950 text-sm" role="alert">
+          {error}
+        </div>
+      )}
 
       {/* Persona Selector Tabs */}
       <div className="space-y-3">

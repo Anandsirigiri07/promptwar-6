@@ -1,9 +1,8 @@
 /**
  * VAYUWISE AI - Meteorological & Inversion Intelligence Provider
  * Analyzes atmospheric lapse rates, boundary layer heights, and nocturnal inversions.
- * Uses Open-Meteo Weather Reanalysis/Forecast (free, no key required), falling back
- * to calibrated offline atmospheric profiles when offline or in scenario simulations.
- * Never manufactures arbitrary baseline numbers for missing live fields.
+ * Uses Open-Meteo modelled weather for realtime data and calibrated atmospheric profiles
+ * only when an explicit offline scenario is selected. Live failures remain unavailable.
  */
 
 import { z } from 'zod';
@@ -33,6 +32,7 @@ export class MeteorologyProvider {
     lat: number,
     lon: number
   ): Promise<{ weather: WeatherData; isInversionActive: boolean | null; measuredAt: string } | null> {
+    if (!Number.isFinite(lat) || !Number.isFinite(lon) || lat < -90 || lat > 90 || lon < -180 || lon > 180) return null;
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 4000);
 
@@ -60,24 +60,27 @@ export class MeteorologyProvider {
           windSpeedKmh: Math.round(c.wind_speed_10m * 10) / 10
         };
 
-        let hasAloftData = false;
-        if (typeof h?.boundary_layer_height?.[0] === 'number' && !isNaN(h.boundary_layer_height[0])) {
-          weather.boundaryLayerHeightMeters = Math.round(h.boundary_layer_height[0]);
-        }
-        if (typeof h?.temperature_1000hPa?.[0] === 'number' && !isNaN(h.temperature_1000hPa[0])) {
-          weather.surfaceTemperatureC = Math.round(h.temperature_1000hPa[0] * 10) / 10;
-          hasAloftData = true;
-        }
-        if (typeof h?.temperature_850hPa?.[0] === 'number' && !isNaN(h.temperature_850hPa[0])) {
-          weather.aloftTemperatureC = Math.round(h.temperature_850hPa[0] * 10) / 10;
-          hasAloftData = true;
-        }
+        // Hourly pressure-level values must align with the provider's current timestamp,
+        // not the first hour of the day (which can be many hours stale).
+        const currentHourIndex = h?.time.findIndex(hour => hour === c.time) ?? -1;
+        const hourlyValue = (values?: Array<number | null>) =>
+          currentHourIndex >= 0 ? values?.[currentHourIndex] : null;
+        const boundaryLayer = hourlyValue(h?.boundary_layer_height);
+        const surfaceAt1000 = hourlyValue(h?.temperature_1000hPa);
+        const aloftAt850 = hourlyValue(h?.temperature_850hPa);
 
-        // Determine inversion state: true, false, or null (unknown) if boundary/aloft data is absent
+        if (typeof boundaryLayer === 'number' && Number.isFinite(boundaryLayer)) {
+          weather.boundaryLayerHeightMeters = Math.round(boundaryLayer);
+        }
+        const has1000hPa = typeof surfaceAt1000 === 'number' && Number.isFinite(surfaceAt1000);
+        const has850hPa = typeof aloftAt850 === 'number' && Number.isFinite(aloftAt850);
+        if (has1000hPa) weather.surfaceTemperatureC = Math.round(surfaceAt1000 * 10) / 10;
+        if (has850hPa) weather.aloftTemperatureC = Math.round(aloftAt850 * 10) / 10;
+
+        // An inversion classification needs both pressure-level temperatures for the current hour.
         let isInversionActive: boolean | null = null;
-        if (hasAloftData && weather.aloftTemperatureC !== undefined) {
-          const inversion = analyzeThermalInversion(weather);
-          isInversionActive = inversion.isInversionPresent;
+        if (has1000hPa && has850hPa) {
+          isInversionActive = analyzeThermalInversion(weather).isInversionPresent;
         }
 
         return {
@@ -99,42 +102,35 @@ export class MeteorologyProvider {
   public static async getCurrentWeatherAsync(
     _zoneId: string,
     scenario = 'realtime',
-    lat = 28.6139,
-    lon = 77.2090
-  ): Promise<WeatherData> {
-    if (scenario !== 'realtime') {
-      return this.getCalibratedWeather(scenario);
-    }
-
+    lat = Number.NaN,
+    lon = Number.NaN
+  ): Promise<WeatherData | null> {
+    if (scenario !== 'realtime') return this.getCalibratedWeather(scenario);
     const live = await this.fetchLiveWeatherForCoordinatesAsync(lat, lon);
-    if (live) {
-      return live.weather;
-    }
-
-    return this.getCalibratedWeather(scenario);
+    return live?.weather ?? null;
   }
 
-  public static getCurrentWeather(_zoneId: string, scenario = 'realtime'): WeatherData {
-    return this.getCalibratedWeather(scenario);
+  public static getCurrentWeather(_zoneId: string, scenario = 'realtime'): WeatherData | null {
+    return scenario === 'realtime' ? null : this.getCalibratedWeather(scenario);
   }
 
   public static async getInversionStatusAsync(
     zoneId: string,
     scenario = 'realtime',
-    lat = 28.6139,
-    lon = 77.2090
-  ): Promise<InversionAnalysis> {
+    lat = Number.NaN,
+    lon = Number.NaN
+  ): Promise<InversionAnalysis | null> {
     const weather = await this.getCurrentWeatherAsync(zoneId, scenario, lat, lon);
-    return analyzeThermalInversion(weather);
+    return weather ? analyzeThermalInversion(weather) : null;
   }
 
-  public static getInversionStatus(zoneId: string, scenario = 'realtime'): InversionAnalysis {
+  public static getInversionStatus(zoneId: string, scenario = 'realtime'): InversionAnalysis | null {
     const weather = this.getCurrentWeather(zoneId, scenario);
-    return analyzeThermalInversion(weather);
+    return weather ? analyzeThermalInversion(weather) : null;
   }
 
   /**
-   * Calibrated offline weather profiles based on authentic winter meteorological soundings.
+   * Calibrated synthetic weather profiles for explicitly selected offline scenarios.
    */
   private static getCalibratedWeather(scenario: string): WeatherData {
     switch (scenario) {

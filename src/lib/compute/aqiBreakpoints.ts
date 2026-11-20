@@ -46,7 +46,8 @@ export type AQICategory =
   | 'Very Poor'    // CPCB
   | 'Very Unhealthy' // EPA
   | 'Severe'       // CPCB
-  | 'Hazardous';   // EPA
+  | 'Hazardous'    // EPA
+  | 'Unavailable'; // No valid pollutant coverage
 
 // CPCB Breakpoints (CPCB 2014 NAQI guidelines)
 // Units: PM2.5 (ug/m3), PM10 (ug/m3), NO2 (ug/m3), CO (mg/m3), O3 (ug/m3), SO2 (ug/m3)

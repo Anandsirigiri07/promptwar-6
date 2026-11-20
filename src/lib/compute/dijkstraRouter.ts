@@ -3,7 +3,7 @@
  * Calculates lowest-exposure and lowest-time routes on a transit graph.
  * 
  * Edge cost function:
- * cost = distance * (1 + (ambientAQI / 100) * (1 - protectionFactor))
+ * cost = distance * (1 + (ambientPM25 / 100) * (1 - protectionFactor))
  */
 
 import { assertFiniteNumber } from './asserts.js';
@@ -22,7 +22,7 @@ export interface GraphEdge {
   to: string;
   distanceKm: number;
   mode: CommuteMode;
-  ambientAQI: number;
+  ambientPM25: number;
 }
 
 export interface RouteStep {
@@ -31,7 +31,7 @@ export interface RouteStep {
   distanceKm: number;
   mode: CommuteMode;
   stepDurationMinutes: number;
-  ambientAQI: number;
+  ambientPM25: number;
 }
 
 export interface PlannedPathResult {
@@ -60,7 +60,7 @@ export class DijkstraRouter {
 
   public addEdge(edge: GraphEdge): void {
     assertFiniteNumber(edge.distanceKm, 'Edge distance (km)', 0.01, 1000);
-    assertFiniteNumber(edge.ambientAQI, 'Edge ambient AQI', 0, 1000);
+    assertFiniteNumber(edge.ambientPM25, 'Edge ambient AQI', 0, 1000);
 
     if (!this.nodes.has(edge.from)) {
       throw new Error(`Edge source node ${edge.from} not found in graph`);
@@ -147,7 +147,7 @@ export class DijkstraRouter {
         let edgeCost = edge.distanceKm;
         if (strategy === 'lowest_exposure') {
           // Weight incorporates ambient AQI and exposure rate
-          edgeCost = edge.distanceKm * (1 + (edge.ambientAQI / 80) * (1 - protection));
+          edgeCost = edge.distanceKm * (1 + (edge.ambientPM25 / 80) * (1 - protection));
         } else if (strategy === 'fastest_time') {
           edgeCost = durationHours * 60; // in minutes
         }
@@ -183,7 +183,7 @@ export class DijkstraRouter {
         distanceKm: edge.distanceKm,
         mode: edge.mode,
         stepDurationMinutes: Math.round((edge.distanceKm / speed) * 60),
-        ambientAQI: edge.ambientAQI
+        ambientPM25: edge.ambientPM25
       });
       curr = prevNode;
     }
@@ -201,7 +201,7 @@ export class DijkstraRouter {
       const profile = COMMUTE_PROFILES[step.mode]!;
       const filter = hasN95 ? Math.max(profile.defaultVehicleFiltration, 0.9) : profile.defaultVehicleFiltration;
       // Inhaled dose approximation from AQI (AQI ~ PM2.5 in ug/m3 approximation for cost)
-      const approxPM25 = step.ambientAQI * 0.8;
+      const approxPM25 = step.ambientPM25 * 0.8;
       const dose = approxPM25 * (step.stepDurationMinutes / 60) * profile.breathingRateM3PerHour * (1 - filter);
       totalDose += dose;
       totalCO2 += step.distanceKm * profile.co2GramsPerPassengerKm;

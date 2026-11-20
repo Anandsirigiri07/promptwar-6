@@ -132,25 +132,16 @@ export class AIService {
       }
     ];
 
-    // Genuine physical dose reduction requires verified PM2.5 mass concentration (µg/m³).
-    // Never derive particulate mass directly from overall AQI via arbitrary multipliers.
-    let estimatedDoseReduction: number | null = null;
-    let doseReductionExplanation =
-      'Numerical dose reduction unavailable: direct physical PM2.5 mass concentration was not provided. AQI is a dimensionless sub-index and cannot be scientifically converted into particulate mass.';
+    // A generic daily avoided-dose total is not defensible without a time-resolved,
+    // person-specific schedule, breathing rates, indoor filter performance and mask fit.
+    // Do not imply that an ambient concentration alone is an individual health outcome.
+    const estimatedDoseReduction: number | null = null;
+    const doseReductionExplanation =
+      'Daily avoided PM2.5 dose is not calculated because this routine does not contain enough person-specific activity duration, breathing-rate, filtration and mask-fit inputs to support a defensible total.';
     const doseReductionMethodology =
-      'Avoided Dose = PM2.5 (µg/m³) × ∑ [ Duration_i (h) × RespirationRate_i (m³/h) × FilterEfficiency_i ]';
-
-    if (typeof params.ambientPM25 === 'number' && params.ambientPM25 > 0) {
-      // Physical dose calculation: 0.55 m³/h baseline respiration rate, 16 active hours,
-      // ~75% particulate filtration across active indoor hours (12h) + 90% N95 mask protection in transit (2h).
-      // Avoided mass = PM2.5 * (12 * 0.55 * 0.75 + 2 * 0.55 * 0.90) = PM2.5 * 5.94 µg/day
-      estimatedDoseReduction = Math.round(params.ambientPM25 * 5.94 * 10) / 10;
-      doseReductionExplanation = `Estimated ~${estimatedDoseReduction} µg/day particulate intake avoided based on measured PM2.5 (${params.ambientPM25} µg/m³), standard 0.55 m³/h respiration rate, and combined indoor HEPA (75%) and transit N95 (90%) protections.`;
-    }
-
-    const healthSummary = estimatedDoseReduction !== null
-      ? `Personalized protection profile for ${personaProfile.label}. Under current ambient conditions (${params.ambientPM25} µg/m³ PM2.5, AQI ${params.currentAQI}), strategic timing and indoor filtration reduce lung particulate intake by an estimated ~${estimatedDoseReduction} µg/day.`
-      : `Personalized protection profile for ${personaProfile.label}. Under current AQI of ${params.currentAQI} (${params.dominantPollutant.toUpperCase()}), strategic timing and sealed indoor environments minimize acute particulate spikes during morning and evening boundary layer inversions.`;
+      'Not calculated. The activity exposure explainer provides a simplified scenario estimate with explicit assumptions, not a measured personal dose.';
+    const healthSummary =
+      `Personalized protection profile for ${personaProfile.label}. Recommendations use the available AQI context; check current pollutant and weather data before making time-sensitive decisions.`;
 
     return {
       routineId: `routine-${Date.now()}`,
@@ -189,14 +180,11 @@ export class AIService {
       return cached;
     }
 
-    // Always compute physical dose deterministically using genuine PM2.5 when available
-    let deterministicDoseReduction: number | null = null;
-    let doseExplanation =
-      'Numerical dose reduction unavailable: direct physical PM2.5 mass concentration was not provided. AQI is a dimensionless index and cannot be directly multiplied into particulate mass.';
-    if (typeof params.ambientPM25 === 'number' && params.ambientPM25 > 0) {
-      deterministicDoseReduction = Math.round(params.ambientPM25 * 5.94 * 10) / 10;
-      doseExplanation = `Estimated ~${deterministicDoseReduction} µg/day particulate intake avoided based on measured PM2.5 (${params.ambientPM25} µg/m³), 0.55 m³/h respiration rate, and combined indoor HEPA (75%) and transit N95 (90%) protections.`;
-    }
+    // Keep numerical daily avoided-dose output unavailable until person-specific
+    // exposure durations and validated filtration/respiration assumptions are collected.
+    const deterministicDoseReduction: number | null = null;
+    const doseExplanation =
+      'Daily avoided PM2.5 dose is not calculated because this routine does not include person-specific activity durations, breathing rates, filtration performance and mask-fit inputs.';
 
     if (!genAIClient) {
       const fallback = this.generateDeterministicRoutine(params);

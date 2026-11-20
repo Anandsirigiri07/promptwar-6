@@ -44,14 +44,15 @@ export const IndoorAirPage: React.FC = () => {
       })
     : null;
 
-  // Real-time ventilation advisory: strictly requires verified environmental telemetry (never hardcoded defaults)
+  // Ventilation advice is withheld when weather or a standard-compliant AQI is unavailable.
   const zone = selectedZone;
   const hasValidWeather = Boolean(
     zone &&
     typeof zone.temperatureC === 'number' &&
     typeof zone.humidityPercent === 'number' &&
     typeof zone.windSpeedKmh === 'number' &&
-    typeof zone.overallAQI === 'number'
+    typeof zone.overallAQI === 'number' &&
+    zone.aqiIsValid !== false
   );
 
   const ventilationAdvice: VentilationWindowAdvice = hasValidWeather && zone && zone.temperatureC !== null && zone.humidityPercent !== null && zone.windSpeedKmh !== null
@@ -63,8 +64,8 @@ export const IndoorAirPage: React.FC = () => {
     : {
         action: 'Keep Windows Closed',
         recommendedHoursDescription: 'Insufficient local meteorological observations. Keep windows closed as a precautionary measure during winter smog periods.',
-        reason: 'Ventilation evaluation requires verified outdoor AQI and meteorological readings (temperature, humidity, and wind speed). Do not open windows based on unmeasured assumptions.',
-        ambientAQI: zone?.overallAQI ?? 0,
+        reason: 'Ventilation evaluation requires outdoor AQI and meteorological readings (temperature, humidity, and wind speed). Missing or user-supplied values are not independently verified.',
+        ambientAQI: zone?.aqiIsValid === false ? null : zone?.overallAQI ?? null,
         confidenceScore: 0
       };
 
@@ -118,7 +119,7 @@ export const IndoorAirPage: React.FC = () => {
               </strong>
               <span className="text-xs px-2 py-0.5 rounded bg-sage-100 text-sage-700 font-semibold">
                 {hasValidWeather
-                  ? `Ambient AQI ${ventilationAdvice.ambientAQI} • ${selectedZone?.dataOrigin === 'demo' ? 'Demo' : 'Live'}`
+                  ? `${selectedZone?.aqiBasis === 'instantaneous_estimate' ? 'Indicative AQI' : 'Scenario AQI'} ${ventilationAdvice.ambientAQI ?? 'Unavailable'} • ${selectedZone?.dataOrigin === 'demo' ? 'Demo scenario' : selectedZone?.dataOrigin === 'live_station' ? 'Ground station' : 'Modelled data'}`
                   : 'Outdoor Telemetry Unavailable'}
               </span>
             </div>

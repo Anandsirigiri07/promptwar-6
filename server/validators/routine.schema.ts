@@ -37,7 +37,6 @@ export const ActivityScheduleItemSchema = z.object({
   scientificReasoning: z.string(),
   relevantPollutants: z.array(z.string()),
   saferAlternative: z.string(),
-  estimatedInhaledDoseReductionPercent: z.number().min(0).max(100).optional(),
   actionableStep: z.string()
 });
 

@@ -33,7 +33,7 @@ export const CommutePage: React.FC = () => {
   const [distanceKm, setDistanceKm] = useState(12.5);
   const [hasN95, setHasN95] = useState(false);
 
-  const ambientPM25 = selectedZone?.pollutants.pm25.concentration || 145;
+  const ambientPM25 = selectedZone?.pollutants.pm25.concentration ?? null;
 
   useEffect(() => {
     calculateCommute({
@@ -73,9 +73,15 @@ export const CommutePage: React.FC = () => {
           </h1>
         </div>
         <p className="text-sm text-forest-600">
-          Evaluates multi-modal travel routes using cumulative inhaled PM2.5 dose physics and carbon impact.
+          Compares illustrative transport-mode scenarios using the selected zone's PM2.5 data and stated assumptions. These are not live directions or personal health measurements.
         </p>
       </div>
+
+      {ambientPM25 === null && (
+        <div className="p-4 rounded-xl border border-amber-300 bg-amber-50 text-amber-950 text-sm" role="status">
+          PM2.5 concentration is unavailable for this zone. Commute exposure comparisons are paused rather than using an invented fallback value.
+        </div>
+      )}
 
       {/* Route Parameters Form */}
       <div className="bg-white rounded-2xl border border-sage-200 p-6 shadow-xs space-y-4">
@@ -260,7 +266,7 @@ export const CommutePage: React.FC = () => {
                     {step.stepDurationMinutes} mins
                   </span>
                   <span className="text-[10px] text-forest-500 font-mono">
-                    Ambient AQI {step.ambientAQI}
+                    Scenario PM2.5 {step.ambientPM25} µg/m³
                   </span>
                 </div>
               </div>

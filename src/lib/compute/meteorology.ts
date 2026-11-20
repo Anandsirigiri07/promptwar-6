@@ -28,7 +28,7 @@ export interface VentilationWindowAdvice {
   action: 'Keep Windows Closed' | 'Ventilate Briefly' | 'Safe for Cross-Ventilation';
   recommendedHoursDescription: string;
   reason: string;
-  ambientAQI: number;
+  ambientAQI: number | null;
   confidenceScore: number;
 }
 
