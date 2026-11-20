@@ -5,12 +5,14 @@
  * Uses atomic Firestore transactions for pledge progress and impact recalculation.
  */
 
-import admin from 'firebase-admin';
+import { cert, initializeApp, type App } from 'firebase-admin/app';
+import { getAuth, type Auth } from 'firebase-admin/auth';
+import { getFirestore as getAdminFirestore, type Firestore } from 'firebase-admin/firestore';
 import { logger } from '../utils/logger.js';
 import { CommunityPledgeRecord, calculatePledgeAvoidedEmissions } from '../../src/lib/compute/communityImpact.js';
 
-let adminApp: admin.app.App | null = null;
-let firestoreDb: admin.firestore.Firestore | null = null;
+let adminApp: App | null = null;
+let firestoreDb: Firestore | null = null;
 
 // Fallback in-memory store for evaluation when Firebase service account is omitted
 const inMemoryPledges = new Map<string, CommunityPledgeRecord>();
@@ -83,14 +85,14 @@ export function initializeFirebaseAdmin(): void {
 
   if (projectId && clientEmail && privateKey && !projectId.includes('vayuwise-demo')) {
     try {
-      adminApp = admin.initializeApp({
-        credential: admin.credential.cert({
+      adminApp = initializeApp({
+        credential: cert({
           projectId,
           clientEmail,
           privateKey
         })
       });
-      firestoreDb = adminApp.firestore();
+      firestoreDb = getAdminFirestore(adminApp);
       logger.info('Firebase Admin and Firestore initialized successfully');
     } catch (err) {
       logger.warn('Failed to initialize Firebase Admin with provided credentials, falling back to Demo Mode', { error: String(err) });
@@ -102,11 +104,11 @@ export function initializeFirebaseAdmin(): void {
   }
 }
 
-export function getFirebaseAdminAuth(): admin.auth.Auth | null {
-  return adminApp ? adminApp.auth() : null;
+export function getFirebaseAdminAuth(): Auth | null {
+  return adminApp ? getAuth(adminApp) : null;
 }
 
-export function getFirestore(): admin.firestore.Firestore | null {
+export function getFirestore(): Firestore | null {
   return firestoreDb;
 }
 
