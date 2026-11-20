@@ -322,3 +322,27 @@ export function calculateOverallAQI(
     standardComplianceNotice
   };
 }
+
+/**
+ * Inverts an explicit PM2.5 sub-index back to its physical mass concentration (µg/m³).
+ * Strictly requires that the input is a PM2.5 sub-index (not overall AQI).
+ * Uses the piecewise linear equation:
+ * C = C_lo + [ (I - I_lo) * (C_hi - C_lo) ] / (I_hi - I_lo)
+ */
+export function invertPM25SubIndex(subIndex: number, standard: AQIStandard = 'CPCB'): number | null {
+  if (typeof subIndex !== 'number' || isNaN(subIndex) || !isFinite(subIndex) || subIndex < 0) {
+    return null;
+  }
+
+  const breakpoints = standard === 'CPCB' ? CPCB_BREAKPOINTS.pm25 : EPA_BREAKPOINTS.pm25;
+  const maxIHigh = breakpoints[breakpoints.length - 1]?.iHigh ?? 500;
+  if (subIndex > maxIHigh) {
+    return null; // Out of supported standard range
+  }
+
+  const range = breakpoints.find(b => subIndex >= b.iLow && subIndex <= b.iHigh);
+  if (!range) return null;
+
+  const concentration = range.cLow + ((subIndex - range.iLow) * (range.cHigh - range.cLow)) / (range.iHigh - range.iLow);
+  return Math.round(concentration * 10) / 10;
+}

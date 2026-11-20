@@ -7,6 +7,7 @@ import { AIService } from '../services/aiService.js';
 import { validateBody } from '../middleware/validation.js';
 import { RoutineRequestSchema, ExposureExplainRequestSchema } from '../validators/routine.schema.js';
 import { aiEndpointLimiter } from '../middleware/rateLimit.js';
+import { invertPM25SubIndex } from '../../src/lib/compute/aqiBreakpoints.js';
 
 export const routinesRouter = Router();
 
@@ -27,31 +28,54 @@ routinesRouter.post(
   }
 );
 
-/**
- * Inverts CPCB NAQI breakpoints for PM2.5 to derive physically grounded concentration.
- * Avoids unscientific fixed scalar multipliers like AQI * 0.75.
- */
-function invertCPCBPM25(aqi: number): number {
-  if (aqi <= 50) return Math.round((aqi / 50) * 30);
-  if (aqi <= 100) return Math.round(31 + ((aqi - 51) / 49) * 29);
-  if (aqi <= 200) return Math.round(61 + ((aqi - 101) / 99) * 29);
-  if (aqi <= 300) return Math.round(91 + ((aqi - 201) / 99) * 29);
-  if (aqi <= 400) return Math.round(121 + ((aqi - 301) / 99) * 129);
-  return Math.round(251 + ((Math.min(500, aqi) - 401) / 99) * 249);
-}
-
 routinesRouter.post(
   '/exposure/explain',
   aiEndpointLimiter,
   validateBody(ExposureExplainRequestSchema),
   async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
-      const { activity, durationMinutes, locationType, currentAQI, ambientPM25, isMasked } = req.body;
+      const { activity, durationMinutes, locationType, currentAQI, ambientPM25, pm25SubIndex, standard, isMasked } = req.body;
       const hours = durationMinutes / 60;
 
-      // Use actual observed PM2.5 concentration when provided; otherwise invert CPCB breakpoints
-      const effectivePM25 = typeof ambientPM25 === 'number' ? ambientPM25 : invertCPCBPM25(currentAQI);
-      const isDerived = typeof ambientPM25 !== 'number';
+      let effectivePM25: number | null = null;
+      let pm25Source = 'Unavailable';
+      let isDerived = false;
+
+      // 1. Prefer direct verified physical PM2.5 concentration
+      if (typeof ambientPM25 === 'number' && !isNaN(ambientPM25) && ambientPM25 >= 0) {
+        effectivePM25 = ambientPM25;
+        pm25Source = 'Direct station/provider PM2.5 measurement';
+        isDerived = false;
+      }
+      // 2. Invert explicit PM2.5 sub-index if provided
+      else if (typeof pm25SubIndex === 'number' && !isNaN(pm25SubIndex) && pm25SubIndex >= 0) {
+        const inverted = invertPM25SubIndex(pm25SubIndex, standard || 'CPCB');
+        if (inverted !== null) {
+          effectivePM25 = inverted;
+          pm25Source = `Derived from explicit PM2.5 sub-index using ${standard || 'CPCB'} piecewise linear interpolation`;
+          isDerived = true;
+        }
+      }
+
+      // If PM2.5 cannot be determined (e.g. only overall AQI provided without pollutant sub-index)
+      if (effectivePM25 === null) {
+        res.json({
+          success: true,
+          data: {
+            activity,
+            durationMinutes,
+            locationType,
+            effectivePM25Concentration_ugm3: null,
+            pm25Source: 'Unavailable',
+            estimatedInhaledDose_ug: null,
+            isAvailable: false,
+            isMasked,
+            explanation: `Inhaled PM2.5 particulate mass dose cannot be determined from overall AQI alone (${currentAQI ?? 'unknown'}). Overall AQI is determined by the highest sub-index among all criteria pollutants (PM10, NO2, SO2, CO, O3) and does not identify PM2.5 mass concentration. Direct PM2.5 concentration (µg/m³) or explicit PM2.5 sub-index is required for physical inhalation calculations.`,
+            methodology: 'Inhaled Dose = PM2.5 (µg/m³) × Duration (h) × Respiration Rate (m³/h) × (1 - Filtration Efficiency)'
+          }
+        });
+        return;
+      }
 
       const ventilationRate = activity.toLowerCase().includes('run') || activity.toLowerCase().includes('cycl') ? 1.8 : 0.55;
       const penetration = isMasked ? 0.10 : (locationType === 'indoor' ? 0.40 : 1.0);
@@ -64,13 +88,13 @@ routinesRouter.post(
           durationMinutes,
           locationType,
           effectivePM25Concentration_ugm3: effectivePM25,
-          pm25Source: isDerived
-            ? 'Inverted CPCB NAQI piecewise polynomial (Dominant PM2.5 assumption)'
-            : 'Direct station/provider PM2.5 measurement',
+          pm25Source,
+          isDerived,
+          isAvailable: true,
           estimatedInhaledDose_ug: inhaledDose,
           isMasked,
           explanation: `During ${durationMinutes} mins of ${activity} (${locationType}) under ${effectivePM25} µg/m³ PM2.5, an estimated ${inhaledDose} µg of particulates enters the pulmonary tract. ${
-            isMasked ? 'Wearing an N95 respirator reduced your particulate deposition by ~90%.' : 'An N95 respirator or indoor filtered air can reduce lung deposition by 60%–90%.'
+            isMasked ? 'Wearing an N95 respirator reduced your particulate intake by ~90%.' : 'An N95 respirator or indoor filtered air can reduce lung intake by 60%–90%.'
           }`,
           methodology: 'Inhaled Dose = PM2.5 (µg/m³) × Duration (h) × Respiration Rate (m³/h) × (1 - Filtration Efficiency)'
         }

@@ -32,7 +32,11 @@ export function useAirAnalytics() {
         isWorsening: pm25Delta > 0,
         trend: pm25Trend
       },
-      inversionRisk: selectedZone.isInversionActive ? 'Active Thermal Inversion' : 'Normal Atmospheric Lapse Rate'
+      inversionRisk: selectedZone.isInversionActive === true
+        ? 'Active Thermal Inversion'
+        : selectedZone.isInversionActive === false
+        ? 'Normal Atmospheric Lapse Rate'
+        : 'Atmospheric Inversion State Unknown'
     };
   }, [selectedZone]);
 

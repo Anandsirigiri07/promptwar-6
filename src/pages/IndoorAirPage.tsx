@@ -14,7 +14,7 @@ import {
 } from 'lucide-react';
 import { useApp } from '../context/AppContext.js';
 import { calculateRoomIAQ } from '../lib/compute/cadrCalculations.js';
-import { evaluateVentilationWindow, WeatherData } from '../lib/compute/meteorology.js';
+import { evaluateVentilationWindow, type VentilationWindowAdvice } from '../lib/compute/meteorology.js';
 import { SavedRoomConfig } from '../types/iaq.js';
 
 export const IndoorAirPage: React.FC = () => {
@@ -44,13 +44,29 @@ export const IndoorAirPage: React.FC = () => {
       })
     : null;
 
-  // Real-time ventilation advisory
-  const weather: WeatherData = {
-    temperatureC: selectedZone?.temperatureC || 17,
-    humidityPercent: selectedZone?.humidityPercent || 70,
-    windSpeedKmh: selectedZone?.windSpeedKmh || 6
-  };
-  const ventilationAdvice = evaluateVentilationWindow(selectedZone?.overallAQI || 175, weather);
+  // Real-time ventilation advisory: strictly requires verified environmental telemetry (never hardcoded defaults)
+  const zone = selectedZone;
+  const hasValidWeather = Boolean(
+    zone &&
+    typeof zone.temperatureC === 'number' &&
+    typeof zone.humidityPercent === 'number' &&
+    typeof zone.windSpeedKmh === 'number' &&
+    typeof zone.overallAQI === 'number'
+  );
+
+  const ventilationAdvice: VentilationWindowAdvice = hasValidWeather && zone && zone.temperatureC !== null && zone.humidityPercent !== null && zone.windSpeedKmh !== null
+    ? evaluateVentilationWindow(zone.overallAQI, {
+        temperatureC: zone.temperatureC,
+        humidityPercent: zone.humidityPercent,
+        windSpeedKmh: zone.windSpeedKmh
+      })
+    : {
+        action: 'Keep Windows Closed',
+        recommendedHoursDescription: 'Insufficient local meteorological observations. Keep windows closed as a precautionary measure during winter smog periods.',
+        reason: 'Ventilation evaluation requires verified outdoor AQI and meteorological readings (temperature, humidity, and wind speed). Do not open windows based on unmeasured assumptions.',
+        ambientAQI: zone?.overallAQI ?? 0,
+        confidenceScore: 0
+      };
 
   const handleCreateRoom = (e: React.FormEvent) => {
     e.preventDefault();
@@ -101,7 +117,9 @@ export const IndoorAirPage: React.FC = () => {
                 Smart Ventilation Status: {ventilationAdvice.action}
               </strong>
               <span className="text-xs px-2 py-0.5 rounded bg-sage-100 text-sage-700 font-semibold">
-                Ambient AQI {ventilationAdvice.ambientAQI}
+                {hasValidWeather
+                  ? `Ambient AQI ${ventilationAdvice.ambientAQI} • ${selectedZone?.dataOrigin === 'demo' ? 'Demo' : 'Live'}`
+                  : 'Outdoor Telemetry Unavailable'}
               </span>
             </div>
             <p className="text-xs text-forest-600 mt-1">{ventilationAdvice.reason}</p>

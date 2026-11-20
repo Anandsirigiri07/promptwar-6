@@ -4,6 +4,7 @@ import {
   calculateOverallAQI,
   getAQICategory,
   getAQIColorHex,
+  invertPM25SubIndex,
   PollutantReading
 } from '../lib/compute/aqiBreakpoints.js';
 
@@ -122,5 +123,23 @@ describe('AQI Piecewise Linear Interpolation & Standard Compliance', () => {
     const validResult = calculateOverallAQI(validReadings, 'CPCB');
     expect(validResult.isValidStandard).toBe(true);
     expect(validResult.standardComplianceNotice).toBeUndefined();
+  });
+
+  it('inverts explicit PM2.5 sub-index back to mass concentration accurately', () => {
+    // CPCB PM2.5 Inversion
+    expect(invertPM25SubIndex(25, 'CPCB')).toBe(15);
+    expect(invertPM25SubIndex(75, 'CPCB')).toBe(45.2);
+    expect(invertPM25SubIndex(150, 'CPCB')).toBe(75.4);
+    expect(invertPM25SubIndex(350, 'CPCB')).toBe(184.8);
+
+    // US EPA PM2.5 Inversion (strictly separated breakpoints)
+    expect(invertPM25SubIndex(25, 'EPA')).toBe(4.5);
+    expect(invertPM25SubIndex(75, 'EPA')).toBe(22);
+
+    // Out of range and invalid inputs return null (no fabricated extrapolation)
+    expect(invertPM25SubIndex(-10, 'CPCB')).toBeNull();
+    expect(invertPM25SubIndex(550, 'CPCB')).toBeNull();
+    expect(invertPM25SubIndex(NaN, 'CPCB')).toBeNull();
+    expect(invertPM25SubIndex(Infinity, 'CPCB')).toBeNull();
   });
 });

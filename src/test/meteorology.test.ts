@@ -83,4 +83,16 @@ describe('Meteorology & Thermal Inversion Dispersion Models', () => {
     const advice = evaluateVentilationWindow(45, weather, 10);
     expect(advice.action).toBe('Safe for Cross-Ventilation');
   });
+
+  it('does not fabricate inversion when meteorological inputs are neutral', () => {
+    const neutralWeather: WeatherData = {
+      temperatureC: 22,
+      humidityPercent: 50,
+      windSpeedKmh: 14.0
+    };
+
+    const inversion = analyzeThermalInversion(neutralWeather);
+    expect(inversion.isInversionPresent).toBe(false);
+    expect(inversion.inversionStrength).toBe('None');
+  });
 });

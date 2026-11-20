@@ -54,7 +54,7 @@ Severe winter smog, particulate matter spikes (PM2.5 / PM10), and shallow atmosp
 +---------------------------------------------------------------------------------------+
 |                        MULTI-TIER ENVIRONMENTAL DATA PROVIDERS                        |
 |  1. Open-Meteo Copernicus CAMS Live Air Quality & Weather (Free, No Key Required)     |
-|  2. OpenAQ v3 Ground Stations (Optional live physical stations with OPENAQ_API_KEY)   |
+|  2. OpenAQ v3 Ground Stations (Optional physical ground station observations)         |
 |  3. Calibrated Offline Demo Simulation Engine (Unmanufactured historical baseline)    |
 +---------------------------------------------------------------------------------------+
 ```
@@ -68,7 +68,7 @@ Severe winter smog, particulate matter spikes (PM2.5 / PM10), and shallow atmosp
 | `/` | **Platform Overview & Mission** | Overview of challenge alignment, direct links to family onboarding and air intelligence. |
 | `/onboarding` | **Family & Persona Setup** | 8 specific protection profiles (Infant, Child, Senior, Asthmatic, Student, Commuter, Cyclist, Champion) with zero tracking cookies or forced GPS permissions. |
 | `/dashboard` | **Hyperlocal AQI & Inversion Map** | Distinct urban airshed zones for Delhi NCR and Bengaluru with authentic coordinates; real-time multi-pollutant cards (PM2.5, PM10, NO₂, CO, O₃, SO₂) with 7-hour sparklines, data origin labels (Live Model, Cached, Demo), and scenario simulation. |
-| `/routine` | **GenAI Daily Routine Optimizer** | Hour-by-hour schedules factoring in morning thermal inversions; computes avoided inhaled PM2.5 dose ($\mu$g/day); custom activity dose explainer using inverted CPCB piecewise equations (no arbitrary multipliers). |
+| `/routine` | **GenAI Daily Routine Optimizer** | Hour-by-hour schedules factoring in morning thermal inversions; computes avoided inhaled PM2.5 dose ($\mu$g/day) strictly when physical PM2.5 mass concentration is verified (never derived from overall AQI); custom activity dose explainer using validated piecewise sub-index equations. |
 | `/commute` | **Dijkstra Multi-Modal Transit Optimizer** | Compares 7 modes (Metro, Electric Bus, Diesel Bus, EV Car, Petrol Car, Cycling, Walking) on travel duration, CO₂ emissions, and inhaled PM2.5 dose; transparent multi-criteria objective mode scoring; Dijkstra lowest-exposure path solver. |
 | `/indoor-air` | **IAQ & Low-Cost Hack Center** | Room volume, required CADR, and actual ACH calculator; dynamic outdoor air quality and meteorology integration; step-by-step Corsi-Rosenthal DIY box filter blueprint; smart ventilation window assistant. |
 | `/community` | **Collective Action & Pledges** | Community pledge creation, self-reported action logging with idempotency deduplication, reasonable unit bounds, and atomic server-side recalculation of avoided emissions (IPCC & CPCB baselines). |
@@ -170,5 +170,5 @@ A GitHub Actions workflow is active under `.github/workflows/ci.yml`:
 ## 9. Assumptions & Limitations
 
 1. **Air Quality Standards**: Default calculations follow the Central Pollution Control Board (CPCB) NAQI 2014 standards; US EPA AQI can be toggled in Preferences.
-2. **Demo Mode**: When external live sensors (OpenAQ) or Gemini API credentials are unconfigured, VAYUWISE AI transparently uses live atmospheric reanalysis (Open-Meteo) and deterministic algorithms with clear labeling.
+2. **Demo Mode & Live Data**: Primary real-time telemetry is fetched from Open-Meteo Copernicus CAMS live atmospheric reanalysis (keyless). When external services (OpenAQ ground stations or Gemini API) are unconfigured, VAYUWISE AI operates in transparent demo mode using deterministic algorithms with explicit data origin labeling.
 3. **Medical Disclaimer**: VAYUWISE AI provides scientific algorithmic advice and does not replace statutory emergency directives or clinical medical diagnoses.

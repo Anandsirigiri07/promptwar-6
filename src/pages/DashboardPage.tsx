@@ -86,9 +86,11 @@ export const DashboardPage: React.FC = () => {
       {/* Atmospheric Inversion Status Banner */}
       <div
         className={`p-4 rounded-2xl border flex flex-col md:flex-row items-start md:items-center justify-between gap-4 ${
-          zone.isInversionActive
+          zone.isInversionActive === true
             ? 'bg-amber-50/70 border-amber-300 text-amber-950'
-            : 'bg-sage-50/60 border-sage-300 text-forest-900'
+            : zone.isInversionActive === false
+            ? 'bg-sage-50/60 border-sage-300 text-forest-900'
+            : 'bg-warm-bg border-sage-200 text-forest-800'
         }`}
         role="region"
         aria-label="Atmospheric dispersion and thermal inversion condition"
@@ -96,10 +98,14 @@ export const DashboardPage: React.FC = () => {
         <div className="flex items-start gap-3">
           <div
             className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
-              zone.isInversionActive ? 'bg-amber-200 text-amber-800' : 'bg-sage-200 text-sage-800'
+              zone.isInversionActive === true
+                ? 'bg-amber-200 text-amber-800'
+                : zone.isInversionActive === false
+                ? 'bg-sage-200 text-sage-800'
+                : 'bg-forest-100 text-forest-600'
             }`}
           >
-            {zone.isInversionActive ? (
+            {zone.isInversionActive === true ? (
               <AlertTriangle className="w-5 h-5" />
             ) : (
               <Wind className="w-5 h-5" />
@@ -107,14 +113,18 @@ export const DashboardPage: React.FC = () => {
           </div>
           <div>
             <strong className="text-sm font-bold block">
-              {zone.isInversionActive
+              {zone.isInversionActive === true
                 ? 'Thermal Inversion Active: Pollutant Dispersion Restricted'
-                : 'Normal Atmospheric Dispersion Rate'}
+                : zone.isInversionActive === false
+                ? 'Normal Atmospheric Dispersion Rate'
+                : 'Thermal Inversion State: Sounding Telemetry Unavailable'}
             </strong>
             <p className="text-xs text-forest-700 mt-0.5">
-              {zone.isInversionActive
+              {zone.isInversionActive === true
                 ? 'Cold surface air is trapped beneath a warm aloft layer, causing fine particulate matter (PM2.5) to accumulate rapidly at ground level. Outdoor exertion discouraged.'
-                : 'Moderate convective mixing allows vertical dilution of vehicle emissions into the planetary boundary layer.'}
+                : zone.isInversionActive === false
+                ? 'Moderate convective mixing allows vertical dilution of vehicle emissions into the planetary boundary layer.'
+                : 'Planetary boundary layer soundings are not reported for this sector. Observe general winter smog guidelines.'}
             </p>
           </div>
         </div>
@@ -122,15 +132,15 @@ export const DashboardPage: React.FC = () => {
         <div className="flex items-center gap-4 text-xs font-semibold shrink-0">
           <span className="flex items-center gap-1">
             <Thermometer className="w-4 h-4 text-forest-500" />
-            {zone.temperatureC}°C
+            {zone.temperatureC !== null && zone.temperatureC !== undefined ? `${zone.temperatureC}°C` : 'N/A'}
           </span>
           <span className="flex items-center gap-1">
             <Droplets className="w-4 h-4 text-forest-500" />
-            {zone.humidityPercent}% RH
+            {zone.humidityPercent !== null && zone.humidityPercent !== undefined ? `${zone.humidityPercent}% RH` : 'N/A'}
           </span>
           <span className="flex items-center gap-1">
             <Wind className="w-4 h-4 text-forest-500" />
-            {zone.windSpeedKmh} km/h
+            {zone.windSpeedKmh !== null && zone.windSpeedKmh !== undefined ? `${zone.windSpeedKmh} km/h` : 'N/A'}
           </span>
         </div>
       </div>

@@ -32,7 +32,9 @@ export const RoutinePage: React.FC = () => {
   const [customMasked] = useState(false);
   const [explaining, setExplaining] = useState(false);
   const [explanationResult, setExplanationResult] = useState<{
-    estimatedInhaledDose_ug: number;
+    estimatedInhaledDose_ug: number | null;
+    effectivePM25Concentration_ugm3?: number | null;
+    isAvailable?: boolean;
     explanation: string;
     methodology: string;
   } | null>(null);
@@ -53,6 +55,7 @@ export const RoutinePage: React.FC = () => {
           city: preferences.city,
           zoneId: selectedZone?.zoneId || 'zone-1',
           currentAQI: aqi,
+          ambientPM25: selectedZone?.pollutants?.pm25?.concentration,
           dominantPollutant: dominant,
           wakeTime,
           sleepTime,
@@ -73,7 +76,9 @@ export const RoutinePage: React.FC = () => {
     setExplaining(true);
     try {
       const res = await apiRequest<{
-        estimatedInhaledDose_ug: number;
+        estimatedInhaledDose_ug: number | null;
+        effectivePM25Concentration_ugm3?: number | null;
+        isAvailable?: boolean;
         explanation: string;
         methodology: string;
       }>('/api/exposure/explain', {
@@ -83,6 +88,9 @@ export const RoutinePage: React.FC = () => {
           durationMinutes: customDuration,
           locationType: customLocation,
           currentAQI: selectedZone?.overallAQI || 160,
+          ambientPM25: selectedZone?.pollutants?.pm25?.concentration,
+          pm25SubIndex: selectedZone?.pollutants?.pm25?.subIndex,
+          standard: preferences.aqiStandard,
           isMasked: customMasked,
           language: preferences.language
         })
@@ -228,11 +236,20 @@ export const RoutinePage: React.FC = () => {
               </p>
             </div>
 
-            <div className="bg-white p-3 rounded-xl border border-sage-200 shrink-0 text-center">
+            <div className="bg-white p-3 rounded-xl border border-sage-200 shrink-0 text-center max-w-[210px]">
               <span className="text-[11px] text-forest-500 font-medium block">Avoided PM2.5 Intake</span>
-              <span className="text-xl font-black text-sage-700">
-                ~{routine.estimatedTotalDoseReductionUg} µg
-              </span>
+              {typeof routine.estimatedTotalDoseReductionUg === 'number' && routine.estimatedTotalDoseReductionUg > 0 ? (
+                <span className="text-xl font-black text-sage-700">
+                  ~{routine.estimatedTotalDoseReductionUg} µg
+                </span>
+              ) : (
+                <div className="mt-1">
+                  <span className="text-xs font-bold text-amber-800 block">Dose Unavailable</span>
+                  <span className="text-[10px] text-forest-600 block leading-tight mt-0.5">
+                    {routine.doseReductionExplanation || 'Requires verified PM2.5 concentration'}
+                  </span>
+                </div>
+              )}
             </div>
           </div>
 
@@ -344,11 +361,17 @@ export const RoutinePage: React.FC = () => {
           <div className="p-4 rounded-xl bg-sage-50 border border-sage-200 text-xs space-y-2">
             <div className="flex items-center justify-between">
               <strong className="text-forest-900 font-bold">Estimated Particle Intake:</strong>
-              <span className="font-mono font-bold text-sage-700 text-sm">
-                {explanationResult.estimatedInhaledDose_ug} µg PM2.5
-              </span>
+              {typeof explanationResult.estimatedInhaledDose_ug === 'number' ? (
+                <span className="font-mono font-bold text-sage-700 text-sm">
+                  {explanationResult.estimatedInhaledDose_ug} µg PM2.5
+                </span>
+              ) : (
+                <span className="font-bold text-amber-800 text-xs">
+                  Unavailable (PM2.5 mass required)
+                </span>
+              )}
             </div>
-            <p className="text-forest-700">{explanationResult.explanation}</p>
+            <p className="text-forest-700 leading-relaxed">{explanationResult.explanation}</p>
             <span className="text-[10px] text-forest-500 block font-mono">
               Formula: {explanationResult.methodology}
             </span>

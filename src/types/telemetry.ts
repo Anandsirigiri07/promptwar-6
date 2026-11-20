@@ -24,10 +24,12 @@ export interface UrbanZoneTelemetry {
   overallAQI: number;
   dominantPollutant: PollutantType;
   category: AQICategory;
-  temperatureC: number;
-  humidityPercent: number;
-  windSpeedKmh: number;
-  isInversionActive: boolean;
+  temperatureC: number | null;
+  humidityPercent: number | null;
+  windSpeedKmh: number | null;
+  isInversionActive: boolean | null;
+  weatherSource?: string | null;
+  weatherMeasuredAt?: string | null;
   pollutants: Record<PollutantType, PollutantDetail>;
   measuredAt: string;
   dataProvider: string;

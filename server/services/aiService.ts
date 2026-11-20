@@ -26,7 +26,6 @@ const GeminiScheduleItemSchema = z.object({
   scientificReasoning: z.string(),
   relevantPollutants: z.array(z.string()).default(['pm25']),
   saferAlternative: z.string(),
-  estimatedInhaledDoseReductionPercent: z.number().min(0).max(100).default(50),
   actionableStep: z.string()
 });
 
@@ -67,6 +66,7 @@ export class AIService {
     persona: string;
     city: string;
     currentAQI: number;
+    ambientPM25?: number;
     dominantPollutant: string;
     language: string;
   }): DailyPersonalizedRoutine {
@@ -84,7 +84,6 @@ export class AIService {
         scientificReasoning: 'Morning nocturnal inversion layer traps ground-level particulates at peak density before sunrise.',
         relevantPollutants: ['pm25', 'pm10'],
         saferAlternative: 'Keep bedroom windows sealed; activate HEPA or Corsi-Rosenthal unit on medium speed.',
-        estimatedInhaledDoseReductionPercent: 75,
         actionableStep: 'Keep windows tightly closed until midday thermal mixing.'
       },
       {
@@ -96,7 +95,6 @@ export class AIService {
         scientificReasoning: 'Traffic rush hour coincides with cold ground air, producing dangerous localized NO2 and black carbon spikes.',
         relevantPollutants: ['pm25', 'no2'],
         saferAlternative: 'Choose underground metro or electric AC bus over open-window auto-rickshaws or walking.',
-        estimatedInhaledDoseReductionPercent: 60,
         actionableStep: 'Wear a well-fitted N95 respirator during any outdoor walking segments.'
       },
       {
@@ -108,7 +106,6 @@ export class AIService {
         scientificReasoning: 'Solar boundary layer heating breaks the inversion layer, lowering ground concentrations to daily minimum.',
         relevantPollutants: ['pm25', 'co2'],
         saferAlternative: 'Brief 15-minute cross-ventilation window if indoor CO2 is elevated, then reseal.',
-        estimatedInhaledDoseReductionPercent: 40,
         actionableStep: 'Conduct outdoor errands or brief walks now rather than early morning or late evening.'
       },
       {
@@ -120,7 +117,6 @@ export class AIService {
         scientificReasoning: 'Evening traffic cooling causes boundary layer contraction, concentrating vehicle exhaust.',
         relevantPollutants: ['pm25', 'no2', 'co'],
         saferAlternative: 'Plan travel before 17:30 or after 20:00 to avoid rush-hour congestion exposure.',
-        estimatedInhaledDoseReductionPercent: 55,
         actionableStep: 'Keep car AC on internal recirculation mode with cabin filter engaged.'
       },
       {
@@ -132,22 +128,40 @@ export class AIService {
         scientificReasoning: 'Suburban waste and leaf burning plumes typically disperse at ground level between 19:00 - 22:00.',
         relevantPollutants: ['pm25', 'pm10'],
         saferAlternative: 'Replace outdoor patio time with indoor activities in a HEPA-purified room.',
-        estimatedInhaledDoseReductionPercent: 80,
         actionableStep: 'Ensure doors and window gaps are drafted and indoor air cleaner is operating.'
       }
     ];
 
-    // Physics-based inhalation dose reduction calculation (independent of LLM)
-    const estimatedDoseReduction = Math.round(params.currentAQI * 1.8);
+    // Genuine physical dose reduction requires verified PM2.5 mass concentration (µg/m³).
+    // Never derive particulate mass directly from overall AQI via arbitrary multipliers.
+    let estimatedDoseReduction: number | null = null;
+    let doseReductionExplanation =
+      'Numerical dose reduction unavailable: direct physical PM2.5 mass concentration was not provided. AQI is a dimensionless sub-index and cannot be scientifically converted into particulate mass.';
+    const doseReductionMethodology =
+      'Avoided Dose = PM2.5 (µg/m³) × ∑ [ Duration_i (h) × RespirationRate_i (m³/h) × FilterEfficiency_i ]';
+
+    if (typeof params.ambientPM25 === 'number' && params.ambientPM25 > 0) {
+      // Physical dose calculation: 0.55 m³/h baseline respiration rate, 16 active hours,
+      // ~75% particulate filtration across active indoor hours (12h) + 90% N95 mask protection in transit (2h).
+      // Avoided mass = PM2.5 * (12 * 0.55 * 0.75 + 2 * 0.55 * 0.90) = PM2.5 * 5.94 µg/day
+      estimatedDoseReduction = Math.round(params.ambientPM25 * 5.94 * 10) / 10;
+      doseReductionExplanation = `Estimated ~${estimatedDoseReduction} µg/day particulate intake avoided based on measured PM2.5 (${params.ambientPM25} µg/m³), standard 0.55 m³/h respiration rate, and combined indoor HEPA (75%) and transit N95 (90%) protections.`;
+    }
+
+    const healthSummary = estimatedDoseReduction !== null
+      ? `Personalized protection profile for ${personaProfile.label}. Under current ambient conditions (${params.ambientPM25} µg/m³ PM2.5, AQI ${params.currentAQI}), strategic timing and indoor filtration reduce lung particulate intake by an estimated ~${estimatedDoseReduction} µg/day.`
+      : `Personalized protection profile for ${personaProfile.label}. Under current AQI of ${params.currentAQI} (${params.dominantPollutant.toUpperCase()}), strategic timing and sealed indoor environments minimize acute particulate spikes during morning and evening boundary layer inversions.`;
 
     return {
       routineId: `routine-${Date.now()}`,
       persona: params.persona as DailyPersonalizedRoutine['persona'],
       targetDate: new Date().toISOString().split('T')[0]!,
       baselineAQI: params.currentAQI,
-      overallHealthRiskSummary: `Personalized protection profile for ${personaProfile.label}. Under current AQI of ${params.currentAQI} (${params.dominantPollutant.toUpperCase()}), strategic timing reduces lung particulate intake by ~${estimatedDoseReduction} µg/day.`,
+      overallHealthRiskSummary: healthSummary,
       schedule,
       estimatedTotalDoseReductionUg: estimatedDoseReduction,
+      doseReductionExplanation,
+      doseReductionMethodology,
       generatedBy: 'Deterministic Environmental Health Engine',
       generatedAt: new Date().toISOString(),
       isFallback: true
@@ -162,6 +176,7 @@ export class AIService {
     city: string;
     zoneId: string;
     currentAQI: number;
+    ambientPM25?: number;
     dominantPollutant: string;
     wakeTime: string;
     sleepTime: string;
@@ -174,8 +189,14 @@ export class AIService {
       return cached;
     }
 
-    // Always compute the deterministic ground-truth physical dose
-    const deterministicDoseReduction = Math.round(params.currentAQI * 1.8);
+    // Always compute physical dose deterministically using genuine PM2.5 when available
+    let deterministicDoseReduction: number | null = null;
+    let doseExplanation =
+      'Numerical dose reduction unavailable: direct physical PM2.5 mass concentration was not provided. AQI is a dimensionless index and cannot be directly multiplied into particulate mass.';
+    if (typeof params.ambientPM25 === 'number' && params.ambientPM25 > 0) {
+      deterministicDoseReduction = Math.round(params.ambientPM25 * 5.94 * 10) / 10;
+      doseExplanation = `Estimated ~${deterministicDoseReduction} µg/day particulate intake avoided based on measured PM2.5 (${params.ambientPM25} µg/m³), 0.55 m³/h respiration rate, and combined indoor HEPA (75%) and transit N95 (90%) protections.`;
+    }
 
     if (!genAIClient) {
       const fallback = this.generateDeterministicRoutine(params);
@@ -211,7 +232,6 @@ Rules:
       "scientificReasoning": "string",
       "relevantPollutants": ["pm25"],
       "saferAlternative": "string",
-      "estimatedInhaledDoseReductionPercent": 65,
       "actionableStep": "string"
     }
   ]
@@ -258,6 +278,8 @@ Rules:
         schedule: validated.data.schedule as ActivityScheduleItem[],
         // Numerical estimate is strictly tied to physical computation, not LLM hallucination
         estimatedTotalDoseReductionUg: deterministicDoseReduction,
+        doseReductionExplanation: doseExplanation,
+        doseReductionMethodology: 'Avoided Dose = PM2.5 (µg/m³) × ∑ [ Duration_i (h) × RespirationRate_i (m³/h) × FilterEfficiency_i ]',
         generatedBy: modelName,
         generatedAt: new Date().toISOString(),
         isFallback: false

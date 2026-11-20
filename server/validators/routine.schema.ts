@@ -18,6 +18,7 @@ export const RoutineRequestSchema = z.object({
   city: z.string().min(1).max(100),
   zoneId: z.string().min(1).max(50),
   currentAQI: z.number().min(0).max(1000),
+  ambientPM25: z.number().min(0).max(1000).optional(),
   dominantPollutant: z.string().min(1).max(20).default('pm25'),
   wakeTime: z.string().regex(/^\d{2}:\d{2}$/).default('06:30'),
   sleepTime: z.string().regex(/^\d{2}:\d{2}$/).default('22:00'),
@@ -36,7 +37,7 @@ export const ActivityScheduleItemSchema = z.object({
   scientificReasoning: z.string(),
   relevantPollutants: z.array(z.string()),
   saferAlternative: z.string(),
-  estimatedInhaledDoseReductionPercent: z.number().min(0).max(100),
+  estimatedInhaledDoseReductionPercent: z.number().min(0).max(100).optional(),
   actionableStep: z.string()
 });
 
@@ -47,7 +48,9 @@ export const DailyRoutineResponseSchema = z.object({
   baselineAQI: z.number(),
   overallHealthRiskSummary: z.string(),
   schedule: z.array(ActivityScheduleItemSchema).min(3).max(10),
-  estimatedTotalDoseReductionUg: z.number().min(0),
+  estimatedTotalDoseReductionUg: z.number().min(0).nullable(),
+  doseReductionExplanation: z.string().optional(),
+  doseReductionMethodology: z.string().optional(),
   generatedBy: z.string(),
   generatedAt: z.string(),
   isFallback: z.boolean()
@@ -57,7 +60,9 @@ export const ExposureExplainRequestSchema = z.object({
   activity: z.string().min(1).max(150),
   durationMinutes: z.number().min(1).max(720),
   locationType: z.enum(['indoor', 'outdoor', 'transit']),
-  currentAQI: z.number().min(0).max(1000),
+  currentAQI: z.number().min(0).max(1000).optional(),
+  pm25SubIndex: z.number().min(0).max(1000).optional(),
+  standard: z.enum(['CPCB', 'EPA']).default('CPCB'),
   ambientPM25: z.number().min(0).max(1000).optional(),
   isMasked: z.boolean().default(false),
   language: z.enum(['en', 'hi', 'kn', 'ar', 'es']).default('en')

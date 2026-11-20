@@ -8,6 +8,9 @@ import { requireAuth, type AuthenticatedRequest } from '../../server/middleware/
 import { errorHandler } from '../../server/middleware/errorHandler.js';
 import { AIService } from '../../server/services/aiService.js';
 import { getCommunityPledgeById, logCommunityAction } from '../../server/services/firestoreService.js';
+import { routinesRouter } from '../../server/routes/routines.js';
+import { iaqRouter } from '../../server/routes/iaq.js';
+import { UrbanZoneDefinition } from '../../src/lib/constants.js';
 
 describe('Backend API Route & Middleware Unit Tests (In-Memory)', () => {
   const originalEnv = process.env.NODE_ENV;
@@ -204,7 +207,8 @@ describe('Backend API Route & Middleware Unit Tests (In-Memory)', () => {
   });
 
   it('AIService generates deterministic routine and emergency advisory without Gemini API key', async () => {
-    const routine = AIService.generateDeterministicRoutine({
+    // 1. Without physical PM2.5, dose reduction is honestly unavailable (never inferred from AQI alone)
+    const routineNoPM25 = AIService.generateDeterministicRoutine({
       persona: 'child',
       city: 'Delhi',
       currentAQI: 220,
@@ -212,11 +216,25 @@ describe('Backend API Route & Middleware Unit Tests (In-Memory)', () => {
       language: 'en'
     });
 
-    expect(routine).toBeDefined();
-    expect(routine.isFallback).toBe(true);
-    expect(routine.generatedBy).toBe('Deterministic Environmental Health Engine');
-    expect(routine.schedule.length).toBeGreaterThanOrEqual(3);
-    expect(routine.estimatedTotalDoseReductionUg).toBeGreaterThan(0);
+    expect(routineNoPM25).toBeDefined();
+    expect(routineNoPM25.isFallback).toBe(true);
+    expect(routineNoPM25.generatedBy).toBe('Deterministic Environmental Health Engine');
+    expect(routineNoPM25.schedule.length).toBeGreaterThanOrEqual(3);
+    expect(routineNoPM25.estimatedTotalDoseReductionUg).toBeNull();
+    expect(routineNoPM25.doseReductionExplanation).toContain('unavailable');
+
+    // 2. With verified physical PM2.5, dose is computed scientifically
+    const routineWithPM25 = AIService.generateDeterministicRoutine({
+      persona: 'child',
+      city: 'Delhi',
+      currentAQI: 220,
+      ambientPM25: 120,
+      dominantPollutant: 'pm25',
+      language: 'en'
+    });
+
+    expect(routineWithPM25.estimatedTotalDoseReductionUg).toBeGreaterThan(0);
+    expect(routineWithPM25.doseReductionExplanation).toContain('120 µg/m³');
 
     const advisory = await AIService.generateEmergencyAdvisory({
       city: 'Delhi',
@@ -293,5 +311,97 @@ describe('Backend API Route & Middleware Unit Tests (In-Memory)', () => {
     expect(secondResult?.isDuplicate).toBe(true);
     // Crucial: completed count did not increment again!
     expect(secondResult?.updatedPledge.completedCount).toBe(beforeCount + 4);
+  });
+
+  it('POST /api/exposure/explain rejects deriving dose from overall AQI alone and requires verified PM2.5', async () => {
+    // 1. When only overall AQI is provided without PM2.5 mass concentration
+    let explainResult: { success?: boolean; data?: { isAvailable?: boolean; estimatedInhaledDose_ug?: number | null; effectivePM25Concentration_ugm3?: number | null } } = {};
+    const reqNoPM25 = {
+      body: {
+        activity: 'Morning Jog',
+        durationMinutes: 45,
+        locationType: 'outdoor',
+        currentAQI: 260
+      }
+    } as unknown as Request;
+    const resNoPM25 = {
+      json: (d: typeof explainResult) => { explainResult = d; return resNoPM25; }
+    } as unknown as Response;
+
+    const explainHandler = (routinesRouter as any).stack.find((s: any) => s.route?.path === '/exposure/explain')?.route?.stack.slice(-1)[0]?.handle;
+    expect(explainHandler).toBeDefined();
+
+    await explainHandler(reqNoPM25, resNoPM25, () => {});
+    expect(explainResult.success).toBe(true);
+    expect(explainResult.data?.isAvailable).toBe(false);
+    expect(explainResult.data?.estimatedInhaledDose_ug).toBeNull();
+    expect(explainResult.data?.effectivePM25Concentration_ugm3).toBeNull();
+
+    // 2. When verified physical PM2.5 concentration is provided directly
+    let explainWithPM25: { success?: boolean; data?: { isAvailable?: boolean; estimatedInhaledDose_ug?: number | null; effectivePM25Concentration_ugm3?: number | null } } = {};
+    const reqWithPM25 = {
+      body: {
+        activity: 'Morning Jog',
+        durationMinutes: 45,
+        locationType: 'outdoor',
+        currentAQI: 260,
+        ambientPM25: 140
+      }
+    } as unknown as Request;
+    const resWithPM25 = {
+      json: (d: typeof explainWithPM25) => { explainWithPM25 = d; return resWithPM25; }
+    } as unknown as Response;
+
+    await explainHandler(reqWithPM25, resWithPM25, () => {});
+    expect(explainWithPM25.success).toBe(true);
+    expect(explainWithPM25.data?.isAvailable).toBe(true);
+    expect(explainWithPM25.data?.effectivePM25Concentration_ugm3).toBe(140);
+    expect(explainWithPM25.data?.estimatedInhaledDose_ug).toBeGreaterThan(0);
+  });
+
+  it('POST /api/iaq/calculate does not fabricate weather defaults and labels user input honestly', async () => {
+    let iaqResult: { success?: boolean; data?: { ventilationConditions?: { source?: string; isAvailable?: boolean; temperatureC?: number | null } } } = {};
+    const req = {
+      body: {
+        name: 'Bedroom',
+        lengthM: 4,
+        widthM: 3.5,
+        heightM: 2.8,
+        occupants: 2,
+        currentPurifierCADR: 150,
+        targetACH: 5.0,
+        outdoorAQI: 180
+      }
+    } as unknown as Request;
+    const res = {
+      json: (d: typeof iaqResult) => { iaqResult = d; return res; }
+    } as unknown as Response;
+
+    const calcHandler = (iaqRouter as any).stack.find((s: any) => s.route?.path === '/calculate')?.route?.stack.slice(-1)[0]?.handle;
+    expect(calcHandler).toBeDefined();
+
+    await calcHandler(req, res, () => {});
+    expect(iaqResult.success).toBe(true);
+    expect(iaqResult.data?.ventilationConditions?.source).toBe('user_supplied');
+  });
+
+  it('AirQualityProvider OpenAQ connector gracefully handles unconfigured key', async () => {
+    const originalKey = process.env.OPENAQ_API_KEY;
+    delete process.env.OPENAQ_API_KEY;
+
+    const dummyZone: UrbanZoneDefinition = {
+      id: 'delhi-anand-vihar',
+      name: 'Anand Vihar',
+      city: 'Delhi',
+      latitude: 28.6469,
+      longitude: 77.3160
+    };
+
+    const result = await AirQualityProvider.fetchLiveOpenAQZone(dummyZone, 'CPCB');
+    expect(result).toBeNull();
+
+    if (originalKey) {
+      process.env.OPENAQ_API_KEY = originalKey;
+    }
   });
 });

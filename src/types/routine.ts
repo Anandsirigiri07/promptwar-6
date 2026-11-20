@@ -30,7 +30,7 @@ export interface ActivityScheduleItem {
   scientificReasoning: string;
   relevantPollutants: string[];
   saferAlternative: string;
-  estimatedInhaledDoseReductionPercent: number;
+  estimatedInhaledDoseReductionPercent?: number;
   actionableStep: string;
 }
 
@@ -41,7 +41,9 @@ export interface DailyPersonalizedRoutine {
   baselineAQI: number;
   overallHealthRiskSummary: string;
   schedule: ActivityScheduleItem[];
-  estimatedTotalDoseReductionUg: number;
+  estimatedTotalDoseReductionUg: number | null;
+  doseReductionExplanation?: string;
+  doseReductionMethodology?: string;
   generatedBy: string;
   generatedAt: string;
   isFallback: boolean;

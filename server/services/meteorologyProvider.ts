@@ -8,7 +8,6 @@
 
 import { z } from 'zod';
 import { WeatherData, analyzeThermalInversion, InversionAnalysis } from '../../src/lib/compute/meteorology.js';
-import { logger } from '../utils/logger.js';
 
 const OpenMeteoWeatherSchema = z.object({
   current: z.object({
@@ -27,6 +26,74 @@ const OpenMeteoWeatherSchema = z.object({
 
 export class MeteorologyProvider {
   /**
+   * Fetches genuine live meteorology for exact geospatial coordinates.
+   * Returns null if unreachable, preserving authentic telemetry without fabricated numbers.
+   */
+  public static async fetchLiveWeatherForCoordinatesAsync(
+    lat: number,
+    lon: number
+  ): Promise<{ weather: WeatherData; isInversionActive: boolean | null; measuredAt: string } | null> {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 4000);
+
+    try {
+      const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,relative_humidity_2m,wind_speed_10m&hourly=boundary_layer_height,temperature_1000hPa,temperature_850hPa&timezone=auto`;
+      const res = await fetch(url, { signal: controller.signal });
+      clearTimeout(timeout);
+
+      if (!res.ok) return null;
+
+      const rawJson = await res.json();
+      const parsed = OpenMeteoWeatherSchema.safeParse(rawJson);
+      const c = parsed.success ? parsed.data.current : undefined;
+      const h = parsed.success ? parsed.data.hourly : undefined;
+
+      if (
+        c &&
+        typeof c.temperature_2m === 'number' && !isNaN(c.temperature_2m) &&
+        typeof c.relative_humidity_2m === 'number' && !isNaN(c.relative_humidity_2m) &&
+        typeof c.wind_speed_10m === 'number' && !isNaN(c.wind_speed_10m)
+      ) {
+        const weather: WeatherData = {
+          temperatureC: Math.round(c.temperature_2m * 10) / 10,
+          humidityPercent: Math.round(c.relative_humidity_2m),
+          windSpeedKmh: Math.round(c.wind_speed_10m * 10) / 10
+        };
+
+        let hasAloftData = false;
+        if (typeof h?.boundary_layer_height?.[0] === 'number' && !isNaN(h.boundary_layer_height[0])) {
+          weather.boundaryLayerHeightMeters = Math.round(h.boundary_layer_height[0]);
+        }
+        if (typeof h?.temperature_1000hPa?.[0] === 'number' && !isNaN(h.temperature_1000hPa[0])) {
+          weather.surfaceTemperatureC = Math.round(h.temperature_1000hPa[0] * 10) / 10;
+          hasAloftData = true;
+        }
+        if (typeof h?.temperature_850hPa?.[0] === 'number' && !isNaN(h.temperature_850hPa[0])) {
+          weather.aloftTemperatureC = Math.round(h.temperature_850hPa[0] * 10) / 10;
+          hasAloftData = true;
+        }
+
+        // Determine inversion state: true, false, or null (unknown) if boundary/aloft data is absent
+        let isInversionActive: boolean | null = null;
+        if (hasAloftData && weather.aloftTemperatureC !== undefined) {
+          const inversion = analyzeThermalInversion(weather);
+          isInversionActive = inversion.isInversionPresent;
+        }
+
+        return {
+          weather,
+          isInversionActive,
+          measuredAt: c.time
+        };
+      }
+      return null;
+    } catch {
+      clearTimeout(timeout);
+      return null;
+    }
+  }
+
+  /**
    * Asynchronously retrieves weather data, prioritizing live atmospheric reanalysis.
    */
   public static async getCurrentWeatherAsync(
@@ -39,51 +106,9 @@ export class MeteorologyProvider {
       return this.getCalibratedWeather(scenario);
     }
 
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 4000);
-
-    try {
-      const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,relative_humidity_2m,wind_speed_10m&hourly=boundary_layer_height,temperature_1000hPa,temperature_850hPa&timezone=auto`;
-      const res = await fetch(url, { signal: controller.signal });
-      clearTimeout(timeout);
-
-      if (res.ok) {
-        const rawJson = await res.json();
-        const parsed = OpenMeteoWeatherSchema.safeParse(rawJson);
-        const c = parsed.success ? parsed.data.current : undefined;
-        const h = parsed.success ? parsed.data.hourly : undefined;
-
-        if (
-          c &&
-          typeof c.temperature_2m === 'number' &&
-          typeof c.relative_humidity_2m === 'number' &&
-          typeof c.wind_speed_10m === 'number'
-        ) {
-          const weather: WeatherData = {
-            temperatureC: Math.round(c.temperature_2m * 10) / 10,
-            humidityPercent: Math.round(c.relative_humidity_2m),
-            windSpeedKmh: Math.round(c.wind_speed_10m * 10) / 10
-          };
-
-          // Attach boundary layer and aloft temps ONLY when genuinely present in response
-          if (typeof h?.boundary_layer_height?.[0] === 'number' && !isNaN(h.boundary_layer_height[0])) {
-            weather.boundaryLayerHeightMeters = Math.round(h.boundary_layer_height[0]);
-          }
-          if (typeof h?.temperature_1000hPa?.[0] === 'number' && !isNaN(h.temperature_1000hPa[0])) {
-            weather.surfaceTemperatureC = Math.round(h.temperature_1000hPa[0] * 10) / 10;
-          }
-          if (typeof h?.temperature_850hPa?.[0] === 'number' && !isNaN(h.temperature_850hPa[0])) {
-            weather.aloftTemperatureC = Math.round(h.temperature_850hPa[0] * 10) / 10;
-          }
-
-          return weather;
-        }
-      }
-    } catch (err) {
-      clearTimeout(timeout);
-      logger.warn('Live meteorology provider unreachable, using calibrated atmospheric profile', {
-        error: err instanceof Error ? err.message : String(err)
-      });
+    const live = await this.fetchLiveWeatherForCoordinatesAsync(lat, lon);
+    if (live) {
+      return live.weather;
     }
 
     return this.getCalibratedWeather(scenario);

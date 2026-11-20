@@ -44,7 +44,7 @@ export const AdvisoriesPage: React.FC = () => {
           city: preferences.city,
           aqi: selectedZone?.overallAQI || 285,
           dominantPollutant: selectedZone?.dominantPollutant || 'pm25',
-          inversionStrength: selectedZone?.isInversionActive ? 'Moderate' : 'None',
+          inversionStrength: selectedZone?.isInversionActive === true ? 'Moderate' : selectedZone?.isInversionActive === false ? 'None' : 'Moderate',
           language: preferences.language
         })
       });

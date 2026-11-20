@@ -14,6 +14,30 @@ import { UrbanZoneTelemetry, PollutantDetail, ScenarioType } from '../../src/typ
 import { calculateOverallAQI, PollutantType, PollutantReading } from '../../src/lib/compute/aqiBreakpoints.js';
 import { getZonesForCity, UrbanZoneDefinition } from '../../src/lib/constants.js';
 import { logger } from '../utils/logger.js';
+import { MeteorologyProvider } from './meteorologyProvider.js';
+
+// OpenAQ v3 API response schema for physical ground monitoring stations
+const OpenAQV3LocationsSchema = z.object({
+  results: z.array(z.object({
+    id: z.number(),
+    name: z.string(),
+    coordinates: z.object({
+      latitude: z.number(),
+      longitude: z.number()
+    }),
+    datetimeLast: z.object({
+      utc: z.string()
+    }).optional(),
+    sensors: z.array(z.object({
+      id: z.number(),
+      parameter: z.object({
+        name: z.string(),
+        units: z.string()
+      }),
+      value: z.number().nullable().optional()
+    })).optional()
+  })).optional()
+});
 
 // Open-Meteo Response Schema
 const OpenMeteoAirQualitySchema = z.object({
@@ -77,7 +101,32 @@ export class AirQualityProvider {
       return this.getCalibratedDemoTelemetry(zones, scenario, standard);
     }
 
-    // Attempt independent live fetch from Open-Meteo for each configured zone coordinate
+    // 1. If OPENAQ_API_KEY is configured, attempt querying authentic physical ground monitoring stations
+    const openAQKey = process.env.OPENAQ_API_KEY;
+    if (openAQKey && openAQKey.trim() !== '' && !openAQKey.includes('your_openaq_api_key')) {
+      try {
+        const openAQResults = await Promise.allSettled(
+          zones.map(z => this.fetchLiveOpenAQZone(z, standard))
+        );
+        const liveStations: UrbanZoneTelemetry[] = [];
+        for (const res of openAQResults) {
+          if (res.status === 'fulfilled' && res.value !== null) {
+            liveStations.push(res.value);
+          }
+        }
+        if (liveStations.length === zones.length) {
+          zoneTelemetryCache.set(cacheKey, {
+            data: liveStations,
+            expiresAt: now + CACHE_TTL_MS
+          });
+          return liveStations;
+        }
+      } catch (err) {
+        logger.warn('OpenAQ ground station request failed, trying Open-Meteo atmospheric model', { error: String(err) });
+      }
+    }
+
+    // 2. Attempt independent live fetch from Open-Meteo Copernicus CAMS for each configured zone coordinate
     try {
       const liveResults = await Promise.allSettled(
         zones.map(z => this.fetchLiveOpenMeteoZone(z, standard))
@@ -261,6 +310,14 @@ export class AirQualityProvider {
         }
       };
 
+      // Obtain authentic meteorological observations for this zone's coordinates (no hardcoded weather)
+      let liveWeather = null;
+      try {
+        liveWeather = await MeteorologyProvider.fetchLiveWeatherForCoordinatesAsync(zone.latitude, zone.longitude);
+      } catch {
+        // Leave as null if weather fetch fails; do not fabricate numbers
+      }
+
       return {
         zoneId: zone.id,
         name: zone.name,
@@ -270,16 +327,138 @@ export class AirQualityProvider {
         overallAQI: aqiResult.overallAQI,
         dominantPollutant: aqiResult.dominantPollutant,
         category: aqiResult.category,
-        temperatureC: 18,
-        humidityPercent: 62,
-        windSpeedKmh: 7.2,
-        isInversionActive: false,
+        temperatureC: liveWeather ? liveWeather.weather.temperatureC : null,
+        humidityPercent: liveWeather ? liveWeather.weather.humidityPercent : null,
+        windSpeedKmh: liveWeather ? liveWeather.weather.windSpeedKmh : null,
+        isInversionActive: liveWeather ? liveWeather.isInversionActive : null,
+        weatherSource: liveWeather ? 'Open-Meteo Weather Model' : null,
+        weatherMeasuredAt: liveWeather ? liveWeather.measuredAt : null,
         pollutants,
         measuredAt: current.time,
         dataProvider: 'Open-Meteo / Copernicus CAMS Atmospheric Model',
         isDemoData: false,
         dataOrigin: 'live_model',
         freshnessMinutes: Math.max(0, Math.round((Date.now() - new Date(current.time).getTime()) / 60000))
+      };
+    } catch {
+      clearTimeout(timeout);
+      return null;
+    }
+  }
+
+  /**
+   * Fetches physical ground-station telemetry from OpenAQ v3 API.
+   * Only active if OPENAQ_API_KEY is configured in environment.
+   * Enforces 4-second timeout and strict Zod validation.
+   */
+  public static async fetchLiveOpenAQZone(
+    zone: UrbanZoneDefinition,
+    standard: 'CPCB' | 'EPA'
+  ): Promise<UrbanZoneTelemetry | null> {
+    const apiKey = process.env.OPENAQ_API_KEY;
+    if (!apiKey || apiKey.trim() === '' || apiKey.includes('your_openaq_api_key')) {
+      return null;
+    }
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 4000);
+
+    try {
+      const url = `https://api.openaq.org/v3/locations?coordinates=${zone.latitude},${zone.longitude}&radius=25000&limit=1`;
+      const response = await fetch(url, {
+        headers: {
+          'X-API-Key': apiKey,
+          'Accept': 'application/json'
+        },
+        signal: controller.signal
+      });
+      clearTimeout(timeout);
+
+      if (!response.ok) return null;
+
+      const rawJson = await response.json();
+      const parsed = OpenAQV3LocationsSchema.safeParse(rawJson);
+      if (!parsed.success || !parsed.data.results || parsed.data.results.length === 0) {
+        return null;
+      }
+
+      const location = parsed.data.results[0]!;
+      const sensors = location.sensors || [];
+      const readings: PollutantReading[] = [];
+
+      for (const sensor of sensors) {
+        const pName = sensor.parameter.name.toLowerCase();
+        const val = sensor.value;
+        if (typeof val !== 'number' || isNaN(val) || val < 0) continue;
+
+        if (pName === 'pm25' || pName === 'pm2.5') {
+          readings.push({ pollutant: 'pm25', concentration: Math.round(val * 10) / 10, unit: 'µg/m³' });
+        } else if (pName === 'pm10') {
+          readings.push({ pollutant: 'pm10', concentration: Math.round(val * 10) / 10, unit: 'µg/m³' });
+        } else if (pName === 'no2') {
+          readings.push({ pollutant: 'no2', concentration: Math.round(val * 10) / 10, unit: 'µg/m³' });
+        } else if (pName === 'co') {
+          const coMg = sensor.parameter.units === 'ppm' ? Math.round(val * 1.15 * 10) / 10 : Math.round((val / 1000) * 10) / 10;
+          readings.push({ pollutant: 'co', concentration: coMg, unit: 'mg/m³' });
+        } else if (pName === 'o3') {
+          readings.push({ pollutant: 'o3', concentration: Math.round(val * 10) / 10, unit: 'µg/m³' });
+        } else if (pName === 'so2') {
+          readings.push({ pollutant: 'so2', concentration: Math.round(val * 10) / 10, unit: 'µg/m³' });
+        }
+      }
+
+      if (readings.length === 0) return null;
+
+      const aqiResult = calculateOverallAQI(readings, standard);
+
+      const makeDetail = (code: PollutantType, name: string, unit: string, health: string): PollutantDetail => {
+        const found = readings.find(r => r.pollutant === code);
+        const conc = found?.concentration ?? 0;
+        const sub = aqiResult.subIndices.find(s => s.pollutant === code);
+        return {
+          code,
+          name,
+          concentration: conc,
+          unit,
+          subIndex: sub?.subIndex ?? 0,
+          category: sub?.category ?? 'Good',
+          healthImplications: health,
+          hourlyTrend: []
+        };
+      };
+
+      const pollutants: Record<PollutantType, PollutantDetail> = {
+        pm25: makeDetail('pm25', 'Fine Particulates (PM2.5)', 'µg/m³', 'Microscopic particles penetrating deep into bronchial passages.'),
+        pm10: makeDetail('pm10', 'Coarse Particulates (PM10)', 'µg/m³', 'Inhalable coarse particles provoking upper respiratory irritation.'),
+        no2: makeDetail('no2', 'Nitrogen Dioxide (NO2)', 'µg/m³', 'Combustion byproduct provoking acute airway inflammation.'),
+        co: makeDetail('co', 'Carbon Monoxide (CO)', 'mg/m³', 'Combustion gas reducing oxygen carriage capacity.'),
+        o3: makeDetail('o3', 'Ground-Level Ozone (O3)', 'µg/m³', 'Photochemical oxidant provoking respiratory constriction.'),
+        so2: makeDetail('so2', 'Sulfur Dioxide (SO2)', 'µg/m³', 'Industrial gas triggering bronchoconstriction.')
+      };
+
+      const measuredAt = location.datetimeLast?.utc || new Date().toISOString();
+
+      return {
+        zoneId: zone.id,
+        name: `${zone.name} (${location.name})`,
+        city: zone.city,
+        latitude: location.coordinates.latitude,
+        longitude: location.coordinates.longitude,
+        overallAQI: aqiResult.overallAQI,
+        dominantPollutant: aqiResult.dominantPollutant,
+        category: aqiResult.category,
+        temperatureC: null,
+        humidityPercent: null,
+        windSpeedKmh: null,
+        isInversionActive: null,
+        weatherSource: null,
+        weatherMeasuredAt: null,
+        pollutants,
+        measuredAt,
+        dataProvider: `OpenAQ Ground Station: ${location.name}`,
+        isDemoData: false,
+        dataOrigin: 'live_station',
+        freshnessMinutes: Math.max(0, Math.round((Date.now() - new Date(measuredAt).getTime()) / 60000))
       };
     } catch {
       clearTimeout(timeout);

@@ -10,6 +10,8 @@ import { IAQCalculateRequestSchema } from '../validators/user.schema.js';
 import { calculateRoomIAQ, CORSI_ROSENTHAL_REFERENCE } from '../../src/lib/compute/cadrCalculations.js';
 import { evaluateVentilationWindow, WeatherData, VentilationWindowAdvice } from '../../src/lib/compute/meteorology.js';
 import { AirQualityProvider } from '../services/airQualityProvider.js';
+import { MeteorologyProvider } from '../services/meteorologyProvider.js';
+import { getZonesForCity } from '../../src/lib/constants.js';
 
 export const iaqRouter = Router();
 
@@ -32,29 +34,57 @@ iaqRouter.post(
 
       let ambientAQI: number | undefined = req.body.outdoorAQI;
       let weather: WeatherData | undefined;
-      let sourceLabel = 'User-Supplied Input';
+      let sourceLabel = 'unavailable';
 
       if (typeof ambientAQI === 'number') {
-        weather = {
-          temperatureC: typeof req.body.temperatureC === 'number' ? req.body.temperatureC : 20,
-          humidityPercent: typeof req.body.humidityPercent === 'number' ? req.body.humidityPercent : 50,
-          windSpeedKmh: typeof req.body.windSpeedKmh === 'number' ? req.body.windSpeedKmh : 5.0
-        };
+        sourceLabel = 'user_supplied';
+        // Validate whether user actually provided weather readings; never silently inject arbitrary defaults
+        if (
+          typeof req.body.temperatureC === 'number' &&
+          typeof req.body.humidityPercent === 'number' &&
+          typeof req.body.windSpeedKmh === 'number'
+        ) {
+          weather = {
+            temperatureC: req.body.temperatureC,
+            humidityPercent: req.body.humidityPercent,
+            windSpeedKmh: req.body.windSpeedKmh
+          };
+        } else {
+          // Attempt to fetch independent live meteorology for city coordinates
+          try {
+            const cityZones = getZonesForCity(req.body.city || 'Delhi');
+            const firstZone = cityZones[0];
+            if (firstZone) {
+              const live = await MeteorologyProvider.fetchLiveWeatherForCoordinatesAsync(firstZone.latitude, firstZone.longitude);
+              if (live) {
+                weather = live.weather;
+              }
+            }
+          } catch {
+            weather = undefined;
+          }
+        }
       } else {
         // Query environmental provider for real or calibrated city telemetry
         try {
           const zones = await AirQualityProvider.getZoneTelemetryAsync(req.body.city || 'Delhi');
           if (zones && zones[0]) {
             ambientAQI = zones[0].overallAQI;
-            weather = {
-              temperatureC: zones[0].temperatureC,
-              humidityPercent: zones[0].humidityPercent,
-              windSpeedKmh: zones[0].windSpeedKmh
-            };
-            sourceLabel = zones[0].isDemoData ? 'Calibrated Offline Baseline Reference' : 'Live Environmental Telemetry';
+            sourceLabel = zones[0].dataOrigin;
+            if (
+              zones[0].temperatureC !== null &&
+              zones[0].humidityPercent !== null &&
+              zones[0].windSpeedKmh !== null
+            ) {
+              weather = {
+                temperatureC: zones[0].temperatureC,
+                humidityPercent: zones[0].humidityPercent,
+                windSpeedKmh: zones[0].windSpeedKmh
+              };
+            }
           }
         } catch {
-          // Weather stays undefined
+          weather = undefined;
         }
       }
 
@@ -64,9 +94,9 @@ iaqRouter.post(
       } else {
         ventilationAdvice = {
           action: 'Keep Windows Closed',
-          recommendedHoursDescription: 'Outdoor air quality telemetry unavailable. Keep windows closed as a precautionary measure during severe winter smog episodes.',
-          reason: 'Ventilation evaluation requires verified outdoor AQI and meteorological readings.',
-          ambientAQI: 0,
+          recommendedHoursDescription: 'Insufficient local meteorological observations. Keep windows closed as a precautionary measure during winter smog periods.',
+          reason: 'Ventilation evaluation requires verified outdoor AQI and meteorological readings (temperature, humidity, and wind speed). Do not open windows based on unmeasured assumptions.',
+          ambientAQI: ambientAQI ?? 0,
           confidenceScore: 0
         };
       }
@@ -82,7 +112,7 @@ iaqRouter.post(
             humidityPercent: weather?.humidityPercent ?? null,
             windSpeedKmh: weather?.windSpeedKmh ?? null,
             source: sourceLabel,
-            isAvailable: ambientAQI !== undefined
+            isAvailable: ambientAQI !== undefined && weather !== undefined
           },
           corsiRosenthalReference: CORSI_ROSENTHAL_REFERENCE
         }
