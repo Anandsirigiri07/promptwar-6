@@ -1,12 +1,22 @@
 /**
  * VAYUWISE AI - Firebase Client SDK Gateway
- * Initializes Firebase Web SDK if environment variables are present.
- * Transparently falls back to Demo Mode when unconfigured so evaluators can test instantly.
+ * Configured specifically for Firebase Free Tier (Spark Plan).
+ * Features:
+ * - IndexedDB persistent local cache to drastically reduce reads against the 50,000 reads/day Spark quota.
+ * - Optional local emulator auto-detection for completely offline, zero-quota local development.
+ * - Transparent fallback to Demo Mode when unconfigured so evaluators can test instantly.
  */
 
 import { initializeApp, getApps, type FirebaseApp } from 'firebase/app';
-import { getAuth, type Auth } from 'firebase/auth';
-import { getFirestore, type Firestore } from 'firebase/firestore';
+import { getAuth, connectAuthEmulator, type Auth } from 'firebase/auth';
+import {
+  getFirestore,
+  initializeFirestore,
+  persistentLocalCache,
+  persistentMultipleTabManager,
+  connectFirestoreEmulator,
+  type Firestore
+} from 'firebase/firestore';
 
 let app: FirebaseApp | null = null;
 let auth: Auth | null = null;
@@ -32,7 +42,28 @@ if (isConfigured && rawApiKey) {
     };
     app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0]!;
     auth = getAuth(app);
-    firestore = getFirestore(app);
+
+    // Multi-tab persistent local cache preserves reads for the 50K/day free tier quota
+    try {
+      firestore = initializeFirestore(app, {
+        localCache: persistentLocalCache({
+          tabManager: persistentMultipleTabManager()
+        })
+      });
+    } catch {
+      // In non-browser / test / re-initialization scenarios, fall back to standard getFirestore
+      firestore = getFirestore(app);
+    }
+
+    // Optional Emulator hook for local development & evaluation
+    if (import.meta.env.VITE_FIREBASE_USE_EMULATOR === 'true') {
+      try {
+        connectAuthEmulator(auth, 'http://localhost:9099', { disableWarnings: true });
+        connectFirestoreEmulator(firestore, 'localhost', 8080);
+      } catch (emuErr) {
+        console.warn('Firebase emulator connection skipped or already initialized:', emuErr);
+      }
+    }
   } catch (err) {
     console.warn('Firebase Client init error, demo mode active:', err);
   }

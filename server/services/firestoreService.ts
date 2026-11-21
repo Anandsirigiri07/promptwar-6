@@ -82,6 +82,19 @@ export function initializeFirebaseAdmin(): void {
   const projectId = process.env.FIREBASE_PROJECT_ID;
   const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
   const privateKey = process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n');
+  const emulatorHost = process.env.FIRESTORE_EMULATOR_HOST;
+
+  // Support local Firebase emulator for 100% offline development without private keys
+  if (emulatorHost) {
+    try {
+      adminApp = initializeApp({ projectId: projectId || 'vayuwise-dev' });
+      firestoreDb = getAdminFirestore(adminApp);
+      logger.info('Firebase Admin initialized with local Firestore Emulator', { emulatorHost });
+      return;
+    } catch (err) {
+      logger.warn('Failed to initialize Firebase Admin with emulator', { error: String(err) });
+    }
+  }
 
   if (projectId && clientEmail && privateKey && !projectId.includes('vayuwise-demo')) {
     try {
@@ -117,7 +130,8 @@ export async function fetchCommunityPledges(): Promise<{
   isDemoData: boolean;
 }> {
   if (firestoreDb) {
-    const snapshot = await firestoreDb.collection('communityPledges').get();
+    // Bound query with limit(50) for Firebase Free Tier (Spark Plan) to prevent exhausting the 50,000 reads/day quota
+    const snapshot = await firestoreDb.collection('communityPledges').limit(50).get();
     const pledges = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as CommunityPledgeRecord));
     return { pledges, isDemoData: false };
   }

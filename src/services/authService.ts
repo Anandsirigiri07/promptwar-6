@@ -9,6 +9,7 @@ import { auth, isFirebaseLiveConfigured } from './firebaseService.js';
 import {
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
+  signInAnonymously,
   signOut as firebaseSignOut,
   onAuthStateChanged,
   User as FirebaseUser
@@ -57,6 +58,26 @@ export const authService = {
     storageService.set('vayuwise_auth_token', 'demo-token');
     storageService.set('vayuwise_demo_active', 'true');
     return user;
+  },
+
+  async signInAnonymous(): Promise<UserAccount> {
+    if (isFirebaseLiveConfigured && auth) {
+      const cred = await signInAnonymously(auth);
+      const token = await cred.user.getIdToken();
+      const user: UserAccount = {
+        uid: cred.user.uid,
+        email: 'anonymous@vayuwise.local',
+        displayName: 'Guest Evaluator',
+        isDemoUser: false,
+        avatarSeed: 'sage'
+      };
+      storageService.set('user_session', user);
+      storageService.set('vayuwise_auth_token', token);
+      storageService.remove('vayuwise_demo_active');
+      return user;
+    }
+
+    return this.signInDemo('Guest Evaluator');
   },
 
   async signIn(email: string, password = ''): Promise<UserAccount> {
