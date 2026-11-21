@@ -114,14 +114,18 @@ npm install
 ```
 
 ### 2. Configure Environment Variables (Optional)
-Copy `.env.example` to `.env`:
+VAYUWISE AI is pre-configured to run immediately out-of-the-box with **zero manual configuration required**.
+Without external credentials, the platform runs seamlessly in full transparent Demo Mode with free live Open-Meteo atmospheric reanalysis and deterministic algorithmic engines.
+
+If you wish to customize ports or credentials later, copy `.env.example` to `.env`:
 ```bash
 cp .env.example .env
 ```
-*(Note: If external keys are omitted, the application runs automatically in transparent Demo Mode with free Open-Meteo atmospheric data and deterministic AI fallbacks).*
 
-### 3. API Key Configuration Checklist (For Live External Integrations)
-When you are ready to configure live API credentials, edit your local `.env` file (never commit `.env` to Git):
+### 3. Firebase Free Tier (Spark Plan) & API Configuration Checklist
+The platform is fully optimized for the **Firebase Free Tier (Spark Plan — $0/month forever, no credit card required)** with client IndexedDB caching to conserve the 50,000 reads/day quota. See [docs/FIREBASE_FREE_TIER_SETUP.md](docs/FIREBASE_FREE_TIER_SETUP.md) for full details.
+
+When you are ready to configure live credentials, update `.env`:
 
 | Integration | Variable Name | Scope | Description & Source |
 | :--- | :--- | :--- | :--- |
