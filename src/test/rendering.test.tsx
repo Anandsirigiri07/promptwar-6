@@ -7,6 +7,8 @@ import { UrbanMapSvg } from '../components/shared/UrbanMapSvg.js';
 import { AppProvider } from '../context/AppContext.js';
 import { Navbar } from '../components/Navigation/Navbar.js';
 import { Sidebar } from '../components/Navigation/Sidebar.js';
+import { RouteLoadingFallback } from '../components/shared/RouteLoadingFallback.js';
+import { RouteErrorBoundary } from '../components/shared/RouteErrorBoundary.js';
 
 describe('UI Component Rendering & Accessibility Attributes', () => {
   it('renders AqiBadge with accessible aria-label and numerical status', () => {
@@ -96,5 +98,26 @@ describe('UI Component Rendering & Accessibility Attributes', () => {
     render(<AqiBadge aqi={185} category="Moderate" basis="instantaneous_estimate" />);
     expect(screen.getByRole('status')).toHaveTextContent('185 Indicative AQI');
     expect(screen.getByRole('status')).toHaveAttribute('aria-label', 'Indicative AQI: 185, Category: Moderate');
+  });
+
+  it('renders RouteLoadingFallback with accessible role="status" and aria-live="polite"', () => {
+    render(<RouteLoadingFallback />);
+    const status = screen.getByRole('status');
+    expect(status).toBeInTheDocument();
+    expect(status).toHaveAttribute('aria-live', 'polite');
+    expect(screen.getByText(/Loading Air Intelligence Module/i)).toBeInTheDocument();
+  });
+
+  it('renders RouteErrorBoundary with role="alert" and actionable recovery buttons', () => {
+    render(
+      <BrowserRouter>
+        <RouteErrorBoundary error={new Error('Test network interruption')} />
+      </BrowserRouter>
+    );
+    const alert = screen.getByRole('alert');
+    expect(alert).toBeInTheDocument();
+    expect(screen.getByText('Test network interruption')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Reload Module/i })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /Return to Dashboard/i })).toBeInTheDocument();
   });
 });

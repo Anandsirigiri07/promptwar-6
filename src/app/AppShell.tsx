@@ -2,10 +2,11 @@
  * VAYUWISE AI - Main Layout Shell
  */
 
-import React, { useState } from 'react';
+import React, { useState, Suspense } from 'react';
 import { Outlet } from 'react-router-dom';
 import { Navbar } from '../components/Navigation/Navbar.js';
 import { Sidebar } from '../components/Navigation/Sidebar.js';
+import { RouteLoadingFallback } from '../components/shared/RouteLoadingFallback.js';
 
 export const AppShell: React.FC = () => {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
@@ -31,7 +32,9 @@ export const AppShell: React.FC = () => {
             className="flex-1 p-4 sm:p-6 lg:p-8 outline-none focus:outline-none"
           >
             <div className="max-w-7xl mx-auto w-full">
-              <Outlet />
+              <Suspense fallback={<RouteLoadingFallback />}>
+                <Outlet />
+              </Suspense>
             </div>
           </main>
 
