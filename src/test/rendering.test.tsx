@@ -9,6 +9,7 @@ import { Navbar } from '../components/Navigation/Navbar.js';
 import { Sidebar } from '../components/Navigation/Sidebar.js';
 import { RouteLoadingFallback } from '../components/shared/RouteLoadingFallback.js';
 import { RouteErrorBoundary } from '../components/shared/RouteErrorBoundary.js';
+import type { UrbanZoneTelemetry } from '../types/telemetry.js';
 
 describe('UI Component Rendering & Accessibility Attributes', () => {
   it('renders AqiBadge with accessible aria-label and numerical status', () => {
@@ -41,14 +42,41 @@ describe('UI Component Rendering & Accessibility Attributes', () => {
   });
 
   it('renders UrbanMapSvg with accessible table companion and zone buttons', () => {
-    const mockZones: any[] = [
+    const mockZones: UrbanZoneTelemetry[] = [
       {
         zoneId: 'zone-1',
         name: 'Tech Corridor',
+        city: 'Delhi',
+        latitude: 28.61,
+        longitude: 77.20,
         overallAQI: 165,
-        category: 'Moderate',
         dominantPollutant: 'pm25',
-        pollutants: { pm25: { concentration: 85 } }
+        category: 'Moderate',
+        temperatureC: 22,
+        humidityPercent: 55,
+        windSpeedKmh: 12,
+        isInversionActive: false,
+        pollutants: {
+          pm25: {
+            code: 'pm25',
+            name: 'PM2.5',
+            concentration: 85,
+            unit: 'µg/m³',
+            subIndex: 165,
+            category: 'Moderate',
+            healthImplications: 'Moderate health concern',
+            hourlyTrend: [70, 75, 80, 85]
+          },
+          pm10: { code: 'pm10', name: 'PM10', concentration: 120, unit: 'µg/m³', subIndex: 110, category: 'Moderate', healthImplications: 'Moderate', hourlyTrend: [100, 110, 120] },
+          no2: { code: 'no2', name: 'NO2', concentration: 40, unit: 'µg/m³', subIndex: 40, category: 'Good', healthImplications: 'Good', hourlyTrend: [35, 40] },
+          co: { code: 'co', name: 'CO', concentration: 1.2, unit: 'mg/m³', subIndex: 30, category: 'Good', healthImplications: 'Good', hourlyTrend: [1.1, 1.2] },
+          o3: { code: 'o3', name: 'O3', concentration: 35, unit: 'µg/m³', subIndex: 35, category: 'Good', healthImplications: 'Good', hourlyTrend: [30, 35] },
+          so2: { code: 'so2', name: 'SO2', concentration: 15, unit: 'µg/m³', subIndex: 15, category: 'Good', healthImplications: 'Good', hourlyTrend: [12, 15] }
+        },
+        measuredAt: new Date().toISOString(),
+        dataProvider: 'CPCB',
+        isDemoData: true,
+        dataOrigin: 'demo'
       }
     ];
 

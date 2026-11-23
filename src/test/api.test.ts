@@ -13,6 +13,13 @@ import { routinesRouter } from '../../server/routes/routines.js';
 import { iaqRouter } from '../../server/routes/iaq.js';
 import { UrbanZoneDefinition } from '../../src/lib/constants.js';
 
+interface ExpressLayer {
+  route?: {
+    path?: string;
+    stack: Array<{ handle: (req: Request, res: Response, next: NextFunction) => Promise<void> | void }>;
+  };
+}
+
 describe('Backend API Route & Middleware Unit Tests (In-Memory)', () => {
   const originalEnv = process.env.NODE_ENV;
 
@@ -80,7 +87,7 @@ describe('Backend API Route & Middleware Unit Tests (In-Memory)', () => {
     process.env.NODE_ENV = 'production';
 
     let statusCode = 200;
-    let jsonResult: any = null;
+    let jsonResult: { success?: boolean; error?: string } | null = null;
 
     const req = {
       headers: { authorization: 'Bearer demo-token' }
@@ -90,7 +97,7 @@ describe('Backend API Route & Middleware Unit Tests (In-Memory)', () => {
       status: (code: number) => {
         statusCode = code;
         return {
-          json: (data: any) => {
+          json: (data: { success?: boolean; error?: string }) => {
             jsonResult = data;
           }
         };
@@ -101,8 +108,9 @@ describe('Backend API Route & Middleware Unit Tests (In-Memory)', () => {
     await requireAuth(req, res, next);
 
     expect(statusCode).toBe(401);
-    expect(jsonResult.success).toBe(false);
-    expect(jsonResult.error).toContain('Demo tokens are not permitted in production environment');
+    const body = jsonResult as { success?: boolean; error?: string } | null;
+    expect(body?.success).toBe(false);
+    expect(body?.error).toContain('Demo tokens are not permitted in production environment');
     expect(next).not.toHaveBeenCalled();
   });
 
@@ -329,10 +337,12 @@ describe('Backend API Route & Middleware Unit Tests (In-Memory)', () => {
       json: (d: typeof explainResult) => { explainResult = d; return resNoPM25; }
     } as unknown as Response;
 
-    const explainHandler = (routinesRouter as any).stack.find((s: any) => s.route?.path === '/exposure/explain')?.route?.stack.slice(-1)[0]?.handle;
+    const explainHandler = (routinesRouter as unknown as { stack: ExpressLayer[] }).stack.find((s) => s.route?.path === '/exposure/explain')?.route?.stack.slice(-1)[0]?.handle;
     expect(explainHandler).toBeDefined();
 
-    await explainHandler(reqNoPM25, resNoPM25, () => {});
+    if (explainHandler) {
+      await explainHandler(reqNoPM25, resNoPM25, () => {});
+    }
     expect(explainResult.success).toBe(true);
     expect(explainResult.data?.isAvailable).toBe(false);
     expect(explainResult.data?.estimatedInhaledDose_ug).toBeNull();
@@ -353,7 +363,9 @@ describe('Backend API Route & Middleware Unit Tests (In-Memory)', () => {
       json: (d: typeof explainWithPM25) => { explainWithPM25 = d; return resWithPM25; }
     } as unknown as Response;
 
-    await explainHandler(reqWithPM25, resWithPM25, () => {});
+    if (explainHandler) {
+      await explainHandler(reqWithPM25, resWithPM25, () => {});
+    }
     expect(explainWithPM25.success).toBe(true);
     expect(explainWithPM25.data?.isAvailable).toBe(true);
     expect(explainWithPM25.data?.effectivePM25Concentration_ugm3).toBe(140);
@@ -378,10 +390,12 @@ describe('Backend API Route & Middleware Unit Tests (In-Memory)', () => {
       json: (d: typeof iaqResult) => { iaqResult = d; return res; }
     } as unknown as Response;
 
-    const calcHandler = (iaqRouter as any).stack.find((s: any) => s.route?.path === '/calculate')?.route?.stack.slice(-1)[0]?.handle;
+    const calcHandler = (iaqRouter as unknown as { stack: ExpressLayer[] }).stack.find((s) => s.route?.path === '/calculate')?.route?.stack.slice(-1)[0]?.handle;
     expect(calcHandler).toBeDefined();
 
-    await calcHandler(req, res, () => {});
+    if (calcHandler) {
+      await calcHandler(req, res, () => {});
+    }
     expect(iaqResult.success).toBe(true);
     expect(iaqResult.data?.ventilationConditions?.source).toBe('user_supplied');
   });

@@ -7,10 +7,9 @@
 
 import { logger } from '../utils/logger.js';
 import { CommunityPledgeRecord, calculatePledgeAvoidedEmissions } from '../../src/lib/compute/communityImpact.js';
-
-type App = any;
-type Auth = any;
-type Firestore = any;
+import type { App } from 'firebase-admin/app';
+import type { Auth } from 'firebase-admin/auth';
+import type { Firestore, Transaction, QueryDocumentSnapshot } from 'firebase-admin/firestore';
 
 let adminApp: App | null = null;
 let firestoreDb: Firestore | null = null;
@@ -151,7 +150,7 @@ export async function fetchCommunityPledges(): Promise<{
       // Bound query with limit(50) for Firebase Free Tier (Spark Plan) to prevent exhausting the 50,000 reads/day quota
       const snapshot = await firestoreDb.collection('communityPledges').limit(50).get();
       if (!snapshot.empty) {
-        const pledges = snapshot.docs.map((doc: any) => ({ id: doc.id, ...doc.data() } as CommunityPledgeRecord));
+        const pledges = snapshot.docs.map((doc: QueryDocumentSnapshot) => ({ id: doc.id, ...doc.data() } as CommunityPledgeRecord));
         return { pledges, isDemoData: false };
       }
       return { pledges: Array.from(inMemoryPledges.values()), isDemoData: true };
@@ -209,7 +208,7 @@ export async function logCommunityAction(action: {
         ? firestoreDb.collection('idempotencyKeys').doc(action.idempotencyKey)
         : null;
 
-      return await firestoreDb.runTransaction(async (transaction: any) => {
+      return await firestoreDb.runTransaction(async (transaction: Transaction) => {
         // 1. Check idempotency record within transaction
         if (idempotencyRef) {
           const idempDoc = await transaction.get(idempotencyRef);

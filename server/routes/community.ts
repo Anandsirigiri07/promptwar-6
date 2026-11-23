@@ -133,9 +133,12 @@ communityRouter.post(
       }
 
       // 3. Durable Idempotency / Duplicate submission check
+      const bodyIdempKey = typeof req.body === 'object' && req.body !== null && 'idempotencyKey' in req.body
+        ? String((req.body as Record<string, unknown>).idempotencyKey)
+        : undefined;
       const clientKey = (req.headers['x-idempotency-key'] as string) ||
                         (req.headers['idempotency-key'] as string) ||
-                        (req.body as any).idempotencyKey;
+                        bodyIdempKey;
       const idempotencyKey = clientKey || `${userId}:${pledgeId}:${unitsCompleted}`;
       const lastLoggedAt = idempotencyCache.get(idempotencyKey);
       const now = Date.now();

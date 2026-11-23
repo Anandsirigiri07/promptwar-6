@@ -285,7 +285,7 @@ export const CommunityPage: React.FC = () => {
               <label className="block text-xs font-bold text-forest-800 mb-1">Category</label>
               <select
                 value={category}
-                onChange={(e) => setCategory(e.target.value as any)}
+                onChange={(e) => setCategory(e.target.value as 'carpool' | 'transit' | 'anti_burn' | 'clean_energy' | 'green_neighborhood')}
                 className="w-full p-2.5 rounded-xl border border-forest-200 text-xs text-forest-900 bg-warm-bg"
               >
                 <option value="carpool">Shared Commuting & Carpooling</option>

@@ -6,6 +6,7 @@ import { Router, Request, Response, NextFunction } from 'express';
 import { AirQualityProvider } from '../services/airQualityProvider.js';
 import { validateQuery, validateBody } from '../middleware/validation.js';
 import { AirQualityQuerySchema, ScenarioSimulationSchema } from '../validators/airQuality.schema.js';
+import type { ScenarioType } from '../../src/types/telemetry.js';
 
 export const airQualityRouter = Router();
 
@@ -15,8 +16,11 @@ airQualityRouter.get(
   async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
       const city = (req.query.city as string) || 'Delhi';
-      const scenario = (req.query.scenario as any) || 'realtime';
-      const standard = (req.query.standard as any) || 'CPCB';
+      const validScenarios: ScenarioType[] = ['realtime', 'winter_smog_spike', 'inversion_trap', 'improved_dispersion', 'calm_evening_fog'];
+      const scenario: ScenarioType = typeof req.query.scenario === 'string' && (validScenarios as string[]).includes(req.query.scenario)
+        ? (req.query.scenario as ScenarioType)
+        : 'realtime';
+      const standard: 'CPCB' | 'EPA' = req.query.standard === 'EPA' ? 'EPA' : 'CPCB';
       const zones = await AirQualityProvider.getZoneTelemetryAsync(city, scenario, standard);
 
       const selectedZone = req.query.zoneId
@@ -46,8 +50,11 @@ airQualityRouter.get(
   async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
       const city = (req.query.city as string) || 'Delhi';
-      const scenario = (req.query.scenario as any) || 'realtime';
-      const standard = (req.query.standard as any) || 'CPCB';
+      const validScenarios: ScenarioType[] = ['realtime', 'winter_smog_spike', 'inversion_trap', 'improved_dispersion', 'calm_evening_fog'];
+      const scenario: ScenarioType = typeof req.query.scenario === 'string' && (validScenarios as string[]).includes(req.query.scenario)
+        ? (req.query.scenario as ScenarioType)
+        : 'realtime';
+      const standard: 'CPCB' | 'EPA' = req.query.standard === 'EPA' ? 'EPA' : 'CPCB';
       const zones = await AirQualityProvider.getZoneTelemetryAsync(city, scenario, standard);
 
       res.json({

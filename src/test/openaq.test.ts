@@ -35,11 +35,9 @@ describe('OpenAQ v3 Ground Station Provider Unit & Contract Tests', () => {
 
   it('gracefully handles location endpoint HTTP failure without throwing', async () => {
     process.env.OPENAQ_API_KEY = 'valid-test-key-12345';
-    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce({
-      ok: false,
-      status: 403,
-      statusText: 'Forbidden'
-    } as any);
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+      new Response('Forbidden', { status: 403, statusText: 'Forbidden' })
+    );
 
     const result = await AirQualityProvider.fetchLiveOpenAQZone(mockZone, 'CPCB');
     expect(result).toBeNull();
@@ -47,9 +45,8 @@ describe('OpenAQ v3 Ground Station Provider Unit & Contract Tests', () => {
 
   it('filters out locations with monitor=false or 0 sensors', async () => {
     process.env.OPENAQ_API_KEY = 'valid-test-key-12345';
-    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce({
-      ok: true,
-      json: async () => ({
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+      new Response(JSON.stringify({
         results: [
           {
             id: 101,
@@ -59,8 +56,8 @@ describe('OpenAQ v3 Ground Station Provider Unit & Contract Tests', () => {
             sensors: []
           }
         ]
-      })
-    } as any);
+      }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+    );
 
     const result = await AirQualityProvider.fetchLiveOpenAQZone(mockZone, 'CPCB');
     expect(result).toBeNull();
@@ -100,14 +97,12 @@ describe('OpenAQ v3 Ground Station Provider Unit & Contract Tests', () => {
     };
 
     vi.spyOn(globalThis, 'fetch')
-      .mockResolvedValueOnce({
-        ok: true,
-        json: async () => mockLocationsResponse
-      } as any)
-      .mockResolvedValueOnce({
-        ok: true,
-        json: async () => mockLatestResponse
-      } as any);
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(mockLocationsResponse), { status: 200, headers: { 'Content-Type': 'application/json' } })
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(mockLatestResponse), { status: 200, headers: { 'Content-Type': 'application/json' } })
+      );
 
     const telemetry = await AirQualityProvider.fetchLiveOpenAQZone(mockZone, 'CPCB');
 
@@ -130,9 +125,8 @@ describe('OpenAQ v3 Ground Station Provider Unit & Contract Tests', () => {
     const staleDate = new Date(Date.now() - 10 * 3600 * 1000).toISOString(); // 10 hours ago
 
     vi.spyOn(globalThis, 'fetch')
-      .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({
           results: [
             {
               id: 8888,
@@ -142,16 +136,15 @@ describe('OpenAQ v3 Ground Station Provider Unit & Contract Tests', () => {
               sensors: [{ id: 1, parameter: { name: 'pm25', units: 'ug/m3' } }]
             }
           ]
-        })
-      } as any)
-      .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({
+        }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({
           results: [
             { locationsId: 8888, sensorsId: 1, value: 95.0, datetime: { utc: staleDate } }
           ]
-        })
-      } as any);
+        }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+      );
 
     const result = await AirQualityProvider.fetchLiveOpenAQZone(mockZone, 'CPCB');
     expect(result).toBeNull();
