@@ -5,14 +5,16 @@
  * Uses atomic Firestore transactions for pledge progress and impact recalculation.
  */
 
-import { cert, initializeApp, type App } from 'firebase-admin/app';
-import { getAuth, type Auth } from 'firebase-admin/auth';
-import { getFirestore as getAdminFirestore, type Firestore } from 'firebase-admin/firestore';
 import { logger } from '../utils/logger.js';
 import { CommunityPledgeRecord, calculatePledgeAvoidedEmissions } from '../../src/lib/compute/communityImpact.js';
 
+type App = any;
+type Auth = any;
+type Firestore = any;
+
 let adminApp: App | null = null;
 let firestoreDb: Firestore | null = null;
+let firebaseAuth: Auth | null = null;
 
 // Fallback in-memory store for evaluation when Firebase service account is omitted
 const inMemoryPledges = new Map<string, CommunityPledgeRecord>();
@@ -78,47 +80,62 @@ for (const p of defaultSeedPledges) {
   inMemoryPledges.set(p.id, p);
 }
 
-export function initializeFirebaseAdmin(): void {
+export async function initializeFirebaseAdmin(): Promise<void> {
   const projectId = process.env.FIREBASE_PROJECT_ID;
   const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
   const privateKey = process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n');
   const emulatorHost = process.env.FIRESTORE_EMULATOR_HOST;
 
-  // Support local Firebase emulator for 100% offline development without private keys
-  if (emulatorHost) {
-    try {
-      adminApp = initializeApp({ projectId: projectId || 'vayuwise-dev' });
-      firestoreDb = getAdminFirestore(adminApp);
-      logger.info('Firebase Admin initialized with local Firestore Emulator', { emulatorHost });
-      return;
-    } catch (err) {
-      logger.warn('Failed to initialize Firebase Admin with emulator', { error: String(err) });
+  try {
+    const { initializeApp, cert } = await import('firebase-admin/app');
+    const { getFirestore: getAdminFirestore } = await import('firebase-admin/firestore');
+    
+    // Support local Firebase emulator for 100% offline development without private keys
+    if (emulatorHost) {
+      try {
+        adminApp = initializeApp({ projectId: projectId || 'vayuwise-dev' });
+        firestoreDb = getAdminFirestore(adminApp);
+        logger.info('Firebase Admin initialized with local Firestore Emulator', { emulatorHost });
+        return;
+      } catch (err) {
+        logger.warn('Failed to initialize Firebase Admin with emulator', { error: String(err) });
+      }
     }
-  }
 
-  if (projectId && clientEmail && privateKey && !projectId.includes('vayuwise-demo')) {
-    try {
-      adminApp = initializeApp({
-        credential: cert({
-          projectId,
-          clientEmail,
-          privateKey
-        })
-      });
-      firestoreDb = getAdminFirestore(adminApp);
-      logger.info('Firebase Admin and Firestore initialized successfully');
-    } catch (err) {
-      logger.warn('Failed to initialize Firebase Admin with provided credentials, falling back to Demo Mode', { error: String(err) });
-      adminApp = null;
-      firestoreDb = null;
+    if (projectId && clientEmail && privateKey && !projectId.includes('vayuwise-demo')) {
+      try {
+        adminApp = initializeApp({
+          credential: cert({
+            projectId,
+            clientEmail,
+            privateKey
+          })
+        });
+        firestoreDb = getAdminFirestore(adminApp);
+        
+        try {
+          const authModule = await import('firebase-admin/auth');
+          firebaseAuth = authModule.getAuth(adminApp);
+        } catch (authErr) {
+          logger.warn('Firebase Admin Auth lazy load skipped due to runtime ESM constraint', { error: String(authErr) });
+        }
+
+        logger.info('Firebase Admin and Firestore initialized successfully');
+      } catch (err) {
+        logger.warn('Failed to initialize Firebase Admin with provided credentials, falling back to Demo Mode', { error: String(err) });
+        adminApp = null;
+        firestoreDb = null;
+      }
+    } else {
+      logger.info('Firebase credentials not configured. Running in transparent DEMO mode with in-memory persistence.');
     }
-  } else {
-    logger.info('Firebase credentials not configured. Running in transparent DEMO mode with in-memory persistence.');
+  } catch (loadErr) {
+    logger.warn('Firebase Admin packages unavailable or incompatible with runtime environment. Operating in zero-dependency Demo Mode.', { error: String(loadErr) });
   }
 }
 
 export function getFirebaseAdminAuth(): Auth | null {
-  return adminApp ? getAuth(adminApp) : null;
+  return firebaseAuth;
 }
 
 export function getFirestore(): Firestore | null {
@@ -134,7 +151,7 @@ export async function fetchCommunityPledges(): Promise<{
       // Bound query with limit(50) for Firebase Free Tier (Spark Plan) to prevent exhausting the 50,000 reads/day quota
       const snapshot = await firestoreDb.collection('communityPledges').limit(50).get();
       if (!snapshot.empty) {
-        const pledges = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as CommunityPledgeRecord));
+        const pledges = snapshot.docs.map((doc: any) => ({ id: doc.id, ...doc.data() } as CommunityPledgeRecord));
         return { pledges, isDemoData: false };
       }
       return { pledges: Array.from(inMemoryPledges.values()), isDemoData: true };
@@ -192,7 +209,7 @@ export async function logCommunityAction(action: {
         ? firestoreDb.collection('idempotencyKeys').doc(action.idempotencyKey)
         : null;
 
-      return await firestoreDb.runTransaction(async (transaction) => {
+      return await firestoreDb.runTransaction(async (transaction: any) => {
         // 1. Check idempotency record within transaction
         if (idempotencyRef) {
           const idempDoc = await transaction.get(idempotencyRef);
