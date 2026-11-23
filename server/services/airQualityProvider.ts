@@ -122,13 +122,6 @@ export class AirQualityProvider {
             openAQByZone.set(zones[i]!.id, res.value);
           }
         }
-        if (liveStations.length === zones.length) {
-          zoneTelemetryCache.set(cacheKey, {
-            data: liveStations,
-            expiresAt: now + CACHE_TTL_MS
-          });
-          return liveStations;
-        }
       } catch (err) {
         logger.warn('OpenAQ ground station request failed, trying Open-Meteo atmospheric model', { error: String(err) });
       }
@@ -143,10 +136,36 @@ export class AirQualityProvider {
       const demoZones = this.getCalibratedDemoTelemetry(zones, scenario, standard);
       const resolvedZones: UrbanZoneTelemetry[] = zones.map((zone, index) => {
         const stationReading = openAQByZone.get(zone.id);
-        if (stationReading) return stationReading;
-
         const result = liveResults[index];
-        if (result?.status === 'fulfilled' && result.value !== null) return result.value;
+        const meteoReading = result?.status === 'fulfilled' && result.value !== null ? result.value : null;
+
+        if (stationReading) {
+          if (meteoReading) {
+            const mergedPollutants = {
+              pm25: stationReading.pollutants.pm25.concentration !== null ? stationReading.pollutants.pm25 : meteoReading.pollutants.pm25,
+              pm10: stationReading.pollutants.pm10.concentration !== null ? stationReading.pollutants.pm10 : meteoReading.pollutants.pm10,
+              no2: stationReading.pollutants.no2.concentration !== null ? stationReading.pollutants.no2 : meteoReading.pollutants.no2,
+              co: stationReading.pollutants.co.concentration !== null ? stationReading.pollutants.co : meteoReading.pollutants.co,
+              o3: stationReading.pollutants.o3.concentration !== null ? stationReading.pollutants.o3 : meteoReading.pollutants.o3,
+              so2: stationReading.pollutants.so2.concentration !== null ? stationReading.pollutants.so2 : meteoReading.pollutants.so2
+            };
+            return {
+              ...stationReading,
+              temperatureC: stationReading.temperatureC ?? meteoReading.temperatureC,
+              humidityPercent: stationReading.humidityPercent ?? meteoReading.humidityPercent,
+              windSpeedKmh: stationReading.windSpeedKmh ?? meteoReading.windSpeedKmh,
+              isInversionActive: stationReading.isInversionActive ?? meteoReading.isInversionActive,
+              weatherSource: stationReading.weatherSource ?? meteoReading.weatherSource,
+              weatherMeasuredAt: stationReading.weatherMeasuredAt ?? meteoReading.weatherMeasuredAt,
+              pollutants: mergedPollutants,
+              aqiIsValid: true,
+              category: stationReading.category !== 'Unavailable' ? stationReading.category : meteoReading.category
+            };
+          }
+          return stationReading;
+        }
+
+        if (meteoReading) return meteoReading;
 
         // Keep successful live zones and clearly-labelled demo data for only the unavailable zones.
         return demoZones[index]!;
@@ -470,7 +489,7 @@ export class AirQualityProvider {
         overallAQI:aqi.overallAQI,aqiIsValid:aqi.isValidStandard,aqiBasis:'instantaneous_estimate',
         aqiComplianceNotice:aqi.standardComplianceNotice ?? null,
         dominantPollutant:aqi.dominantPollutant,
-        category:aqi.isValidStandard ? aqi.category : 'Unavailable',
+        category: aqi.category,
         temperatureC:null,humidityPercent:null,windSpeedKmh:null,isInversionActive:null,
         weatherSource:null,weatherMeasuredAt:null,pollutants,
         measuredAt:new Date(newest).toISOString(),

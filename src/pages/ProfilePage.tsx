@@ -6,7 +6,10 @@ import React, { useState } from 'react';
 import {
   Settings,
   User,
-  Layers
+  Layers,
+  CheckCircle2,
+  AlertCircle,
+  KeyRound
 } from 'lucide-react';
 import { useApp } from '../context/AppContext.js';
 import { authService } from '../services/authService.js';
@@ -15,18 +18,22 @@ import { SupportedLanguage } from '../types/index.js';
 export const ProfilePage: React.FC = () => {
   const { currentUser, setCurrentUser, preferences, updatePreferences } = useApp();
   const [emailInput, setEmailInput] = useState(currentUser?.email || '');
-  const [, setSaveMessage] = useState(false);
+  const [passwordInput, setPasswordInput] = useState('');
+  const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!emailInput.trim()) return;
+    if (!emailInput.trim()) {
+      setFeedback({ type: 'error', message: 'Please enter a valid email address.' });
+      return;
+    }
     try {
-      const user = await authService.signIn(emailInput.trim());
+      const user = await authService.signIn(emailInput.trim(), passwordInput.trim());
       setCurrentUser(user);
-      setSaveMessage(true);
-      setTimeout(() => setSaveMessage(false), 2000);
+      setFeedback({ type: 'success', message: `Successfully authenticated as ${user.displayName} (${user.email})` });
+      setTimeout(() => setFeedback(null), 3500);
     } catch (err) {
-      console.warn('Sign in error', err);
+      setFeedback({ type: 'error', message: err instanceof Error ? err.message : 'Authentication could not be completed.' });
     }
   };
 
@@ -34,14 +41,18 @@ export const ProfilePage: React.FC = () => {
     const demoUser = authService.signInDemo('Competition Evaluator');
     setCurrentUser(demoUser);
     setEmailInput(demoUser.email);
-    setSaveMessage(true);
-    setTimeout(() => setSaveMessage(false), 2000);
+    setPasswordInput('');
+    setFeedback({ type: 'success', message: 'Guest Evaluator session active with full platform features enabled.' });
+    setTimeout(() => setFeedback(null), 3500);
   };
 
   const handleSignOut = () => {
     authService.signOut();
     setCurrentUser(null);
     setEmailInput('');
+    setPasswordInput('');
+    setFeedback({ type: 'success', message: 'Signed out successfully.' });
+    setTimeout(() => setFeedback(null), 2500);
   };
 
   return (
@@ -87,45 +98,90 @@ export const ProfilePage: React.FC = () => {
           </span>
         </div>
 
+        {/* Feedback Alert Banner */}
+        {feedback && (
+          <div
+            className={`p-3 rounded-xl text-xs flex items-center gap-2 border ${
+              feedback.type === 'success'
+                ? 'bg-emerald-50 border-emerald-300 text-emerald-900'
+                : 'bg-red-50 border-red-300 text-red-900'
+            }`}
+          >
+            {feedback.type === 'success' ? (
+              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+            ) : (
+              <AlertCircle className="w-4 h-4 text-red-600 shrink-0" />
+            )}
+            <span>{feedback.message}</span>
+          </div>
+        )}
+
         {currentUser ? (
-          <div className="pt-2 flex items-center justify-between border-t border-sage-100">
+          <div className="pt-2 flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-t border-sage-100">
             <span className="text-xs text-forest-500">
-              Session active. All preferences and rooms are persisted to local storage.
+              Session UID: <code className="bg-warm-bg px-1.5 py-0.5 rounded border border-sage-200">{currentUser.uid}</code>
             </span>
-            <button
-              onClick={handleSignOut}
-              className="px-4 py-2 rounded-xl border border-forest-200 text-xs font-semibold text-forest-700 hover:bg-sage-50"
-            >
-              Sign Out
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={handleDemoSignIn}
+                className="px-3.5 py-2 rounded-xl border border-sage-300 bg-sage-50 text-xs font-semibold text-sage-800 hover:bg-sage-100"
+              >
+                Switch to Guest Evaluator
+              </button>
+              <button
+                onClick={handleSignOut}
+                className="px-4 py-2 rounded-xl border border-forest-200 text-xs font-semibold text-forest-700 hover:bg-sage-50"
+              >
+                Sign Out
+              </button>
+            </div>
           </div>
         ) : (
           <form onSubmit={handleSignIn} className="space-y-4 pt-2 border-t border-sage-100">
-            <div>
-              <label className="block text-xs font-bold text-forest-800 mb-1">Email Address</label>
-              <input
-                type="email"
-                value={emailInput}
-                onChange={(e) => setEmailInput(e.target.value)}
-                placeholder="evaluator@vayuwise.local"
-                className="w-full max-w-md p-2.5 rounded-xl border border-forest-200 text-xs text-forest-900 bg-warm-bg"
-                required
-              />
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-bold text-forest-800 mb-1">Email Address</label>
+                <input
+                  type="email"
+                  value={emailInput}
+                  onChange={(e) => setEmailInput(e.target.value)}
+                  placeholder="name@domain.com"
+                  className="w-full p-2.5 rounded-xl border border-forest-200 text-xs text-forest-900 bg-warm-bg focus:outline-none focus:ring-2 focus:ring-sage-400"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-forest-800 mb-1">
+                  Password <span className="font-normal text-forest-400">(optional for instant sign in)</span>
+                </label>
+                <div className="relative">
+                  <input
+                    type="password"
+                    value={passwordInput}
+                    onChange={(e) => setPasswordInput(e.target.value)}
+                    placeholder="Enter password (min 6 chars)"
+                    className="w-full p-2.5 rounded-xl border border-forest-200 text-xs text-forest-900 bg-warm-bg focus:outline-none focus:ring-2 focus:ring-sage-400"
+                  />
+                  <KeyRound className="w-4 h-4 text-forest-400 absolute right-3 top-3 pointer-events-none" />
+                </div>
+              </div>
             </div>
 
-            <div className="flex items-center gap-3">
+            <div className="flex flex-wrap items-center gap-3 pt-2">
               <button
                 type="submit"
-                className="px-4 py-2 rounded-xl bg-forest-800 text-white text-xs font-semibold hover:bg-forest-900"
+                className="px-5 py-2.5 rounded-xl bg-forest-800 text-white text-xs font-semibold hover:bg-forest-900 shadow-xs transition-colors"
               >
-                Sign In
+                Sign In / Register
               </button>
               <button
                 type="button"
                 onClick={handleDemoSignIn}
-                className="px-4 py-2 rounded-xl bg-sage-100 text-sage-800 text-xs font-semibold hover:bg-sage-200 border border-sage-300"
+                className="px-4 py-2.5 rounded-xl bg-sage-100 text-sage-800 text-xs font-semibold hover:bg-sage-200 border border-sage-300 transition-colors"
               >
-                Continue as Demo Evaluator
+                Instant 1-Click Sign In (Evaluator Mode)
               </button>
             </div>
           </form>

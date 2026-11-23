@@ -74,7 +74,7 @@ app.use((req, res) => {
 // Centralized safe error middleware
 app.use(errorHandler);
 
-if (process.env.NODE_ENV !== 'test') {
+if (process.env.NODE_ENV !== 'test' && !process.env.VERCEL) {
   app.listen(PORT, () => {
     logger.info(`VAYUWISE AI Server running on port ${PORT} [NODE_ENV=${process.env.NODE_ENV || 'development'}]`);
   });

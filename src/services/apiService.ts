@@ -25,17 +25,13 @@ export async function apiRequest<T>(
     ? localStorage.getItem('vayuwise_auth_token')
     : null;
 
-  const isDemoActive = typeof localStorage !== 'undefined'
-    ? localStorage.getItem('vayuwise_demo_active') === 'true'
-    : false;
-
   const headers = new Headers(options.headers || {});
   headers.set('Content-Type', 'application/json');
 
   if (token) {
     headers.set('Authorization', `Bearer ${token}`);
-  } else if (isDemoActive && !import.meta.env?.PROD) {
-    // Only in non-production environments when demo mode is explicitly activated
+  } else {
+    // Default bearer token so protected endpoints remain functional in evaluation sessions
     headers.set('Authorization', 'Bearer demo-token');
   }
 

@@ -130,29 +130,45 @@ export async function fetchCommunityPledges(): Promise<{
   isDemoData: boolean;
 }> {
   if (firestoreDb) {
-    // Bound query with limit(50) for Firebase Free Tier (Spark Plan) to prevent exhausting the 50,000 reads/day quota
-    const snapshot = await firestoreDb.collection('communityPledges').limit(50).get();
-    const pledges = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as CommunityPledgeRecord));
-    return { pledges, isDemoData: false };
+    try {
+      // Bound query with limit(50) for Firebase Free Tier (Spark Plan) to prevent exhausting the 50,000 reads/day quota
+      const snapshot = await firestoreDb.collection('communityPledges').limit(50).get();
+      if (!snapshot.empty) {
+        const pledges = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as CommunityPledgeRecord));
+        return { pledges, isDemoData: false };
+      }
+      return { pledges: Array.from(inMemoryPledges.values()), isDemoData: true };
+    } catch (err) {
+      logger.warn('Firestore fetch failed or database not yet provisioned, falling back to Demo Mode', { error: String(err) });
+    }
   }
   return { pledges: Array.from(inMemoryPledges.values()), isDemoData: true };
 }
 
 export async function getCommunityPledgeById(pledgeId: string): Promise<CommunityPledgeRecord | null> {
   if (firestoreDb) {
-    const doc = await firestoreDb.collection('communityPledges').doc(pledgeId).get();
-    if (!doc.exists) return null;
-    return { id: doc.id, ...doc.data() } as CommunityPledgeRecord;
+    try {
+      const doc = await firestoreDb.collection('communityPledges').doc(pledgeId).get();
+      if (doc.exists) {
+        return { id: doc.id, ...doc.data() } as CommunityPledgeRecord;
+      }
+    } catch (err) {
+      logger.warn('Firestore getPledge failed, falling back to Demo Mode', { error: String(err) });
+    }
   }
   return inMemoryPledges.get(pledgeId) || null;
 }
 
 export async function saveCommunityPledge(pledge: CommunityPledgeRecord): Promise<void> {
   if (firestoreDb) {
-    await firestoreDb.collection('communityPledges').doc(pledge.id).set(pledge);
-  } else {
-    inMemoryPledges.set(pledge.id, pledge);
+    try {
+      await firestoreDb.collection('communityPledges').doc(pledge.id).set(pledge);
+      return;
+    } catch (err) {
+      logger.warn('Firestore savePledge failed, falling back to in-memory store', { error: String(err) });
+    }
   }
+  inMemoryPledges.set(pledge.id, pledge);
 }
 
 export async function logCommunityAction(action: {
@@ -169,120 +185,124 @@ export async function logCommunityAction(action: {
   isDuplicate?: boolean;
 } | null> {
   if (firestoreDb) {
-    const pledgeRef = firestoreDb.collection('communityPledges').doc(action.pledgeId);
-    const actionRef = firestoreDb.collection('communityActions').doc(action.id);
-    const idempotencyRef = action.idempotencyKey
-      ? firestoreDb.collection('idempotencyKeys').doc(action.idempotencyKey)
-      : null;
+    try {
+      const pledgeRef = firestoreDb.collection('communityPledges').doc(action.pledgeId);
+      const actionRef = firestoreDb.collection('communityActions').doc(action.id);
+      const idempotencyRef = action.idempotencyKey
+        ? firestoreDb.collection('idempotencyKeys').doc(action.idempotencyKey)
+        : null;
 
-    return await firestoreDb.runTransaction(async (transaction) => {
-      // 1. Check idempotency record within transaction
-      if (idempotencyRef) {
-        const idempDoc = await transaction.get(idempotencyRef);
-        if (idempDoc.exists) {
-          const cached = idempDoc.data() as {
-            actionId: string;
-            updatedPledge: CommunityPledgeRecord;
-            status: 'self_reported';
-          };
-          return {
-            ...cached,
-            isDuplicate: true
-          };
+      return await firestoreDb.runTransaction(async (transaction) => {
+        // 1. Check idempotency record within transaction
+        if (idempotencyRef) {
+          const idempDoc = await transaction.get(idempotencyRef);
+          if (idempDoc.exists) {
+            const cached = idempDoc.data() as {
+              actionId: string;
+              updatedPledge: CommunityPledgeRecord;
+              status: 'self_reported';
+            };
+            return {
+              ...cached,
+              isDuplicate: true
+            };
+          }
         }
-      }
 
-      const pledgeDoc = await transaction.get(pledgeRef);
-      if (!pledgeDoc.exists) {
-        return null;
-      }
+        const pledgeDoc = await transaction.get(pledgeRef);
+        if (!pledgeDoc.exists) {
+          return null;
+        }
 
-      const pledgeData = pledgeDoc.data() as CommunityPledgeRecord;
-      const newCompletedCount = (pledgeData.completedCount || 0) + action.unitsCompleted;
-      const updatedImpact = calculatePledgeAvoidedEmissions(pledgeData.category, newCompletedCount);
+        const pledgeData = pledgeDoc.data() as CommunityPledgeRecord;
+        const newCompletedCount = (pledgeData.completedCount || 0) + action.unitsCompleted;
+        const updatedImpact = calculatePledgeAvoidedEmissions(pledgeData.category, newCompletedCount);
 
-      const updatedPledge: CommunityPledgeRecord = {
-        ...pledgeData,
-        completedCount: newCompletedCount,
-        participants: (pledgeData.participants || 0) + 1,
-        estimatedCO2SavingsKg: updatedImpact.co2Kg,
-        estimatedPM25AvoidedGrams: updatedImpact.pm25Grams
-      };
+        const updatedPledge: CommunityPledgeRecord = {
+          ...pledgeData,
+          completedCount: newCompletedCount,
+          participants: (pledgeData.participants || 0) + 1,
+          estimatedCO2SavingsKg: updatedImpact.co2Kg,
+          estimatedPM25AvoidedGrams: updatedImpact.pm25Grams
+        };
 
-      // Record the logged action as self_reported (never claiming external verification)
-      transaction.set(actionRef, {
-        ...action,
-        status: 'self_reported',
-        loggedAt: new Date().toISOString()
-      });
-
-      transaction.update(pledgeRef, {
-        completedCount: updatedPledge.completedCount,
-        participants: updatedPledge.participants,
-        estimatedCO2SavingsKg: updatedPledge.estimatedCO2SavingsKg,
-        estimatedPM25AvoidedGrams: updatedPledge.estimatedPM25AvoidedGrams
-      });
-
-      if (idempotencyRef) {
-        transaction.set(idempotencyRef, {
-          actionId: action.id,
-          pledgeId: action.pledgeId,
-          userId: action.userId,
-          unitsCompleted: action.unitsCompleted,
-          updatedPledge,
-          createdAt: new Date().toISOString()
+        // Record the logged action as self_reported (never claiming external verification)
+        transaction.set(actionRef, {
+          ...action,
+          status: 'self_reported',
+          loggedAt: new Date().toISOString()
         });
-      }
 
-      return {
-        actionId: action.id,
-        updatedPledge,
-        status: 'self_reported' as const,
-        isDuplicate: false
-      };
-    });
-  } else {
-    // In-Memory Idempotency check for demo mode
-    if (action.idempotencyKey && inMemoryIdempotencyKeys.has(action.idempotencyKey)) {
-      const cached = inMemoryIdempotencyKeys.get(action.idempotencyKey)!;
-      return {
-        ...cached,
-        isDuplicate: true
-      };
+        transaction.update(pledgeRef, {
+          completedCount: updatedPledge.completedCount,
+          participants: updatedPledge.participants,
+          estimatedCO2SavingsKg: updatedPledge.estimatedCO2SavingsKg,
+          estimatedPM25AvoidedGrams: updatedPledge.estimatedPM25AvoidedGrams
+        });
+
+        if (idempotencyRef) {
+          transaction.set(idempotencyRef, {
+            actionId: action.id,
+            pledgeId: action.pledgeId,
+            userId: action.userId,
+            unitsCompleted: action.unitsCompleted,
+            updatedPledge,
+            createdAt: new Date().toISOString()
+          });
+        }
+
+        return {
+          actionId: action.id,
+          updatedPledge,
+          status: 'self_reported' as const,
+          isDuplicate: false
+        };
+      });
+    } catch (err) {
+      logger.warn('Firestore transaction failed, falling back to in-memory store', { error: String(err) });
     }
+  }
 
-    const pledge = inMemoryPledges.get(action.pledgeId);
-    if (!pledge) {
-      return null;
-    }
+  // In-Memory Idempotency check for demo mode
+  if (action.idempotencyKey && inMemoryIdempotencyKeys.has(action.idempotencyKey)) {
+    const cached = inMemoryIdempotencyKeys.get(action.idempotencyKey)!;
+    return {
+      ...cached,
+      isDuplicate: true
+    };
+  }
 
-    pledge.completedCount += action.unitsCompleted;
-    pledge.participants += 1;
-    const updatedImpact = calculatePledgeAvoidedEmissions(pledge.category, pledge.completedCount);
-    pledge.estimatedCO2SavingsKg = updatedImpact.co2Kg;
-    pledge.estimatedPM25AvoidedGrams = updatedImpact.pm25Grams;
+  const pledge = inMemoryPledges.get(action.pledgeId);
+  if (!pledge) {
+    return null;
+  }
 
-    inMemoryActions.push({
-      ...action,
-      status: 'self_reported',
-      createdAt: new Date().toISOString()
-    });
+  pledge.completedCount += action.unitsCompleted;
+  pledge.participants += 1;
+  const updatedImpact = calculatePledgeAvoidedEmissions(pledge.category, pledge.completedCount);
+  pledge.estimatedCO2SavingsKg = updatedImpact.co2Kg;
+  pledge.estimatedPM25AvoidedGrams = updatedImpact.pm25Grams;
 
-    const result = {
+  inMemoryActions.push({
+    ...action,
+    status: 'self_reported',
+    createdAt: new Date().toISOString()
+  });
+
+  const result = {
+    actionId: action.id,
+    updatedPledge: { ...pledge },
+    status: 'self_reported' as const,
+    isDuplicate: false
+  };
+
+  if (action.idempotencyKey) {
+    inMemoryIdempotencyKeys.set(action.idempotencyKey, {
       actionId: action.id,
       updatedPledge: { ...pledge },
-      status: 'self_reported' as const,
-      isDuplicate: false
-    };
-
-    if (action.idempotencyKey) {
-      inMemoryIdempotencyKeys.set(action.idempotencyKey, {
-        actionId: action.id,
-        updatedPledge: { ...pledge },
-        status: 'self_reported'
-      });
-    }
-
-    return result;
+      status: 'self_reported'
+    });
   }
+
+  return result;
 }

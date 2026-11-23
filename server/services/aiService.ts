@@ -49,6 +49,20 @@ export function initializeGenAI(): void {
     try {
       genAIClient = new GoogleGenAI({ apiKey });
       logger.info('Google GenAI client initialized successfully with @google/genai');
+
+      // Pre-validate key in background so suspended keys immediately fall back to zero-latency deterministic mode
+      const testModel = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
+      genAIClient.models.generateContent({
+        model: testModel,
+        contents: 'ping',
+        config: { maxOutputTokens: 1 }
+      }).catch((err: unknown) => {
+        const errMsg = String(err);
+        if (errMsg.includes('suspended') || errMsg.includes('PERMISSION_DENIED') || errMsg.includes('CONSUMER_SUSPENDED')) {
+          logger.warn('Gemini API key consumer project is suspended. Seamlessly switched to instant deterministic AI engine.');
+          genAIClient = null;
+        }
+      });
     } catch (err) {
       logger.warn('Failed to initialize GoogleGenAI client, deterministic fallback active', { error: String(err) });
       genAIClient = null;
@@ -275,8 +289,14 @@ Rules:
 
       aiResponseCache.set(cacheKey, result);
       return result;
-    } catch (err) {
-      logger.error('Gemini routine generation failed, resorting to deterministic engine', err);
+    } catch (err: unknown) {
+      const errMsg = String(err);
+      if (errMsg.includes('suspended') || errMsg.includes('PERMISSION_DENIED') || errMsg.includes('CONSUMER_SUSPENDED')) {
+        logger.warn('Google GenAI project suspended or permission denied, permanently defaulting to deterministic engine');
+        genAIClient = null;
+      } else {
+        logger.error('Gemini routine generation failed, resorting to deterministic engine', err);
+      }
       const fallback = this.generateDeterministicRoutine(params);
       aiResponseCache.set(cacheKey, fallback);
       return fallback;
@@ -392,8 +412,14 @@ Rules:
         generatedBy: modelName,
         isFallback: false
       };
-    } catch (err) {
-      logger.error('Gemini advisory generation failed, returning deterministic fallback', err);
+    } catch (err: unknown) {
+      const errMsg = String(err);
+      if (errMsg.includes('suspended') || errMsg.includes('PERMISSION_DENIED') || errMsg.includes('CONSUMER_SUSPENDED')) {
+        logger.warn('Google GenAI project suspended or permission denied, permanently defaulting to deterministic engine');
+        genAIClient = null;
+      } else {
+        logger.error('Gemini advisory generation failed, returning deterministic fallback', err);
+      }
       return deterministicAdvisory;
     }
   }

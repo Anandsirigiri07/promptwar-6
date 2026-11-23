@@ -1,0 +1,22 @@
+ffconcat version 1.0
+file 'slides/slide_01_intro.png'
+duration 4.0
+file 'slides/slide_02_landing.png'
+duration 31.0
+file 'slides/slide_03_dashboard.png'
+duration 30.0
+file 'slides/slide_04_routine.png'
+duration 28.0
+file 'slides/slide_05_commute.png'
+duration 14.0
+file 'slides/slide_06_indoor.png'
+duration 15.0
+file 'slides/slide_07_community.png'
+duration 14.0
+file 'slides/slide_08_advisories.png'
+duration 15.0
+file 'slides/slide_09_profile.png'
+duration 23.0
+file 'slides/slide_10_outro.png'
+duration 6.0
+file 'slides/slide_10_outro.png'

@@ -45,7 +45,7 @@ export const RoutinePage: React.FC = () => {
       setError('Air-quality data is not available yet. Select a city zone before generating a routine.');
       return;
     }
-    if (selectedZone.aqiIsValid === false) {
+    if (selectedZone.aqiIsValid === false && (!selectedZone.overallAQI || selectedZone.overallAQI <= 0)) {
       setError(selectedZone.aqiComplianceNotice || 'The selected zone does not have enough monitored pollutants to calculate a valid AQI. A routine has not been generated from a placeholder value.');
       return;
     }

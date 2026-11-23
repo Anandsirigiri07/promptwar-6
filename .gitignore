@@ -40,3 +40,11 @@ lerna-debug.log*
 # OS metadata
 Thumbs.db
 ehthumbs.db
+.vercel
+
+# Demo recording intermediates
+demo_video/raw_recording/
+demo_video/test_recordings/
+demo_video/screenshots/
+demo_video/slides/
+demo_video/audio/

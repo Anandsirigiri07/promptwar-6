@@ -36,7 +36,7 @@ export const AdvisoriesPage: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
 
   const loadAdvisory = async () => {
-    if (!selectedZone || selectedZone.aqiIsValid === false) {
+    if (!selectedZone || (!selectedZone.overallAQI && selectedZone.aqiIsValid === false)) {
       setAdvisory(null);
       setIsLoading(false);
       return;
