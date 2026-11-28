@@ -1,117 +1,84 @@
-# Code Quality Manifest — VAYUWISE AI
+# Code Quality
 
-> **Standard:** Elite Production-Grade Engineering (Score: 100/100)  
-> **Evaluation Pillar:** Pillar 1 (Code Quality)  
-> **Repository:** VAYUWISE AI — Urban Air Quality & Smog Public Health Assistant  
+How the code is organised, the rules it is held to, and where each rule is
+enforced. Everything on this page is checked by `npm run check`.
 
----
+## SOLID, with the files that apply each principle
 
-## 1. Architectural Layer Segregation
+| Principle                 | How it is applied                                                                                                                                                                                                                                                                           | Files                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Single responsibility** | Every module has one job, named in its opening comment. A strategy, a factor family, a screening rule, an adapter and a decorator each get their own file                                                                                                                                   | [strategies/](src/features/plan/strategies/), [impact/factors/](src/features/impact/factors/), [prompt-guard/rules/](src/lib/prompt-guard/rules/), [providers/](src/features/air-quality/providers/), [generators/](src/features/assistant/generators/)                                                                                                                                                                      |
+| **Open/closed**           | New behaviour is added by adding a file and one list entry; the code that runs the list does not change. The planner test proves it by running a strategy the registry has never heard of                                                                                                   | [strategies/registry.ts](src/features/plan/strategies/registry.ts) and [planner.ts](src/features/plan/planner.ts); [rules/index.ts](src/lib/prompt-guard/rules/index.ts) and [scan.ts](src/lib/prompt-guard/scan.ts); [factors/index.ts](src/features/impact/factors/index.ts); the rule list in [app.ts](src/app.ts) and [admission.ts](src/middleware/admission.ts); [planner.test.ts](test/features/plan/planner.test.ts) |
+| **Liskov substitution**   | Live, cached, fallback and offline providers all honour `AirQualityProvider`; model, cached, fallback and rule-based generators all honour `PlanGenerator`. One contract test runs over every implementation, and the test doubles are plain objects typed by the same ports, with no casts | [providers/substitutable.test.ts](test/features/air-quality/providers/substitutable.test.ts), [generators/substitutable.test.ts](test/features/assistant/generators/substitutable.test.ts), [test/support/fakes.ts](test/support/fakes.ts)                                                                                                                                                                                   |
+| **Interface segregation** | Ports are the narrowest shape their caller uses: `Clock` has one method, `Cache` two, `Geocoder` one. Routes receive only the sources and gate they need, never the whole dependency set, and the Worker's bindings are declared as three narrow interfaces rather than the generated `Env` | [lib/ports.ts](src/lib/ports.ts), [air-quality/types.ts](src/features/air-quality/types.ts), [assistant/types.ts](src/features/assistant/types.ts), [plan/routes.ts](src/features/plan/routes.ts), `Bindings` in [index.ts](src/index.ts)                                                                                                                                                                                    |
+| **Dependency inversion**  | Features depend on ports, and adapters implement them. A single composition root chooses the adapters and stacks the decorators. A test asserts that `caches`, `console`, `Date` and the bindings are each named in exactly one module                                                      | [index.ts](src/index.ts), [lib/cache.ts](src/lib/cache.ts), [lib/clock.ts](src/lib/clock.ts), [lib/logger.ts](src/lib/logger.ts), [assistant/workers-ai.ts](src/features/assistant/workers-ai.ts), [layers.dom.test.ts](test/conventions/layers.dom.test.ts)                                                                                                                                                                 |
 
-VAYUWISE AI enforces strict physical and conceptual layer segregation across both client and server codebases. Presentation, application state, client-side routing, algorithmic compute engines, data persistence, and HTTP transport layers are decoupled to eliminate monolithic coupling and guarantee testability.
+## Layers
 
-```text
-src/
-├── app/                  # Application Shell & Route Providers (React 19, Suspense)
-│   ├── AppShell.tsx      # Core landmark layout shell (Header, Sidebar, Main, Footer)
-│   └── router.tsx        # Route-level code-split routing with React.lazy & Suspense
-├── components/           # Accessible, memoized presentation components
-│   ├── Navigation/       # Navbar and Sidebar with ARIA disclosure controls
-│   └── shared/           # AqiBadge, PollutantSparkline, UrbanMapSvg, RouteErrorBoundary
-├── context/              # Global state management (AppContext.tsx)
-├── hooks/                # Domain-specific custom hooks (useAirAnalytics, useAirQuality, useExposureRouting)
-├── lib/                  # Pure algorithmic compute engines (0 side effects, 0 DOM dependencies)
-│   ├── compute/          # Dijkstra pathfinding, EPA/CPCB breakpoints, CADR formulas, meteorology
-│   ├── constants.ts      # Domain nodes, urban zones, baseline values, standards
-│   ├── localization.ts   # Multilingual translations (English, Hindi, Bengali, Arabic, etc.)
-│   └── utils.ts          # Safe class merging and style tokens
-├── pages/                # Lazy-loaded routed views (Dashboard, Routine, Commute, IAQ, Community, Advisories)
-├── services/             # Client-side API gateways, Firebase Auth, Firestore sync
-├── styles/               # Design tokens, high-contrast palette, CSS variables
-├── test/                 # 12 Vitest + JSDOM test suites (93 automated tests, 100% pass rate)
-└── types/                # Centralized TypeScript declarations & discriminated unions (Zero `any`)
-server/                   # Express 5 backend with OWASP defense, SHA-256 LRU cache, and Gemini AI
-api/                      # Vercel serverless edge adapter
-```
+A module may import its own unit or a lower layer, never sideways or upwards.
 
-### Layer Rules Enforced
-1. **`src/lib/compute/` (Pure Deterministic Compute Engines):**
-   - Zero React imports, zero browser DOM references, zero network/side effects.
-   - Deterministic mathematical functions: EPA linear piecewise interpolation (`aqiBreakpoints.ts`), single-compartment CADR decay models (`cadrCalculations.ts`), Dijkstra lowest-exposure pathfinding (`dijkstraRouter.ts`), and boundary-layer temperature inversion lapse rates (`meteorology.ts`).
-   - 100% testable in headless Node/JSDOM environments with high branch coverage.
-2. **`src/services/`:**
-   - Incorporates defensive deserialization and typed fallback guarantees against malformed network responses or corrupted browser storage.
-3. **`src/types/`:**
-   - Central repository for all data structures, discriminated unions, and strict enums (`AQICategory`, `PollutantType`, `ScenarioType`, `TransitMode`, `Language`, `UrbanZoneTelemetry`).
-4. **`src/components/` & `src/pages/`:**
-   - Every route is wrapped in `React.lazy` and `Suspense` with an accessible `RouteLoadingFallback` and `RouteErrorBoundary` to prevent fatal render crashes.
+| Height | Unit                                              | May import                               |
+| ------ | ------------------------------------------------- | ---------------------------------------- |
+| 0      | `src/config`                                      | nothing in `src`                         |
+| 1      | `src/lib`                                         | config                                   |
+| 2      | `src/middleware`                                  | lib, config                              |
+| 3      | `src/features/air-quality`, `src/features/impact` | middleware, lib, config (not each other) |
+| 4      | `src/features/plan`                               | air-quality, impact and below            |
+| 5      | `src/features/assistant`                          | plan and below                           |
+| 6      | `src/app.ts`                                      | features and below                       |
+| 7      | `src/index.ts`                                    | everything                               |
 
----
+[layers.dom.test.ts](test/conventions/layers.dom.test.ts) parses every import in
+`src/` and fails on a violation.
 
-## 2. TypeScript Compiler Configuration & Strictness
+## Limits enforced by lint
 
-The project is compiled under strict mode across both frontend (`tsconfig.json`) and backend (`tsconfig.server.json`):
+From [eslint.config.js](eslint.config.js), applied to source, front end, tests
+and scripts alike, with zero warnings allowed:
 
-```json
-{
-  "compilerOptions": {
-    "target": "ES2020",
-    "lib": ["ES2020", "DOM", "DOM.Iterable"],
-    "module": "ESNext",
-    "moduleResolution": "bundler",
-    "strict": true,
-    "noImplicitAny": true,
-    "strictNullChecks": true,
-    "noUnusedLocals": true,
-    "noUnusedParameters": true,
-    "noFallthroughCasesInSwitch": true,
-    "noUncheckedIndexedAccess": true,
-    "noEmit": true,
-    "jsx": "react-jsx",
-    "paths": {
-      "@/*": ["./src/*"]
-    }
-  }
-}
-```
+| Rule                                       | Limit                                                 |
+| ------------------------------------------ | ----------------------------------------------------- |
+| `max-lines`                                | 110 lines per file, blank lines and comments excluded |
+| `max-lines-per-function`                   | 30 lines                                              |
+| `complexity`                               | cyclomatic complexity 8                               |
+| `max-depth`                                | 3                                                     |
+| `max-params`                               | 3                                                     |
+| `consistent-type-assertions`               | no `as` casts (only `as const`)                       |
+| `no-explicit-any`, `no-non-null-assertion` | forbidden                                             |
+| `noInlineConfig`                           | no `eslint-disable` comments anywhere                 |
+| `no-console`                               | forbidden outside [lib/logger.ts](src/lib/logger.ts)  |
+| `no-warning-comments`                      | no TODO, FIXME, XXX or HACK                           |
 
-- **Zero `any` Policy:** Explicit type annotations for all function parameters, return types, state variables, and API responses. The codebase contains zero occurrences of untyped `any`.
-- **Type Guard Validation:** Runtime type guards (`validateZone`, `validatePersona`, `isFiniteNumber`) enforce structural integrity before model processing.
-- **Strict Indexed Access:** `noUncheckedIndexedAccess` guarantees array and dictionary access safety without silent `undefined` exceptions.
+TypeScript runs in strict mode with `noUncheckedIndexedAccess`, `noUnusedLocals`
+and `noUnusedParameters` ([tsconfig.json](tsconfig.json)). The typescript-eslint
+strict type-checked rule set is on for every file.
 
----
+## Conventions enforced by tests
 
-## 3. Linter Cleanliness (Oxlint Verification)
+[files.dom.test.ts](test/conventions/files.dom.test.ts) reads the repository and
+fails unless:
 
-VAYUWISE AI is validated using **Oxlint v1.94.0** with strict configuration (`.oxlintrc.json`).
+- every TypeScript file and front-end module opens with a comment saying what
+  its one job is;
+- every export of the Worker, the front end and the test support modules has a
+  doc comment;
+- every source module is under 3.5 KB, every test file under 4 KB and every
+  stylesheet under 4 KB (the largest source module today is 3,473 bytes, the
+  median 1,360).
 
-```bash
-$ npm run lint
-> oxlint src server --deny-warnings
+## One source of truth
 
-Found 0 warnings and 0 errors.
-Finished in 54ms on 84 files with 73 rules using 12 threads.
-```
+The form's options, labels, ranges and messages are defined once in
+[src/config/](src/config/) and compiled for the page by
+[scripts/build-assets.mjs](scripts/build-assets.mjs), so the page and the Worker
+cannot disagree. The security headers for static assets are generated from
+[security-policy.ts](src/config/security-policy.ts), the same data the Worker
+applies. [form-setup.dom.test.ts](test/public/form-setup.dom.test.ts) and
+[security-policy.test.ts](test/config/security-policy.test.ts) check both.
 
-- **Zero Errors and Zero Warnings** across all 84 project files.
-- Unused parameters intentionally prefixed with underscore (e.g., `_next: NextFunction`, `_req: Request`).
-- Safe control character regex handling using programmatic `RegExp` construction rather than raw escape sequences.
+## Front end
 
----
-
-## 4. Component Hygiene & State Management Discipline
-
-- **No State Updates in `useMemo`:** All state mutations are handled exclusively through event listeners or explicit callbacks (`useCallback`), preventing render-loop bugs.
-- **Exhaustive Dependencies:** All custom hooks (`useAirAnalytics`, `useAirQuality`, `useExposureRouting`) and memoized expressions strictly specify full dependency arrays.
-- **Route-Level Code Splitting:** Heavy page views are dynamically imported with `React.lazy`, segregating bundles into `vendor-react`, `vendor-icons`, and `vendor-firebase` chunks.
-- **Resilient Error Boundaries:** `RouteErrorBoundary` catches unhandled component exceptions and presents actionable recovery controls without freezing the UI.
-- **Standardized File Header Banners:** Every source file contains a structured comment block documenting its architectural role and evaluation pillar mappings.
-
----
-
-## 5. Build Verification
-
-Production build is validated via `npm run build` (`tsc -b && vite build`):
-- Transformed client modules in under 1 second.
-- Output bundles optimized into cleanly separated vendor chunks.
-- Zero compilation warnings or bundle anomalies.
+Twelve ES modules in [public/js/](public/js/), one responsibility each, held to
+the same lint limits and type-checked through JSDoc
+([tsconfig.app.json](tsconfig.app.json)). Data from the server is narrowed by
+runtime guards ([guards.js](public/js/guards.js)), never asserted.
