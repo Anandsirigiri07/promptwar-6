@@ -52,6 +52,6 @@ jobs:
           queries: security-extended
 
       - name: Analyse
-        uses: github/codeql-action/analyze@faaca9a8f6edddba5725ffe5adefdab6669a2eca # v3.38.0
+        uses: github/codeql-action/analyze@915412ff23e8b7659517e607487dbeae018f2934 # v4.39.5
         with:
           category: /language:javascript-typescript
