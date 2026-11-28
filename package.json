@@ -1,62 +1,57 @@
 {
-  "name": "vayuwise-ai",
+  "name": "saaf-saans",
   "version": "1.0.0",
-  "description": "VAYUWISE AI - Full-Stack GenAI Urban Air Quality, Winter Smog Intelligence and Family Protection Platform",
-  "type": "module",
+  "description": "Saaf Saans (clean breath): a GenAI-powered urban air quality assistant for families and communities facing severe winter smog. Cloudflare Workers + Workers AI + Open-Meteo.",
   "scripts": {
-    "dev": "vite",
-    "server": "tsx watch server/index.ts",
-    "server:prod": "tsx server/index.ts",
-    "build:client": "vite build",
-    "build:server": "tsc -p tsconfig.server.json",
-    "build": "npm run build:client && npm run build:server",
-    "start": "node dist-server/server/index.js",
-    "typecheck": "tsc --noEmit && tsc -p tsconfig.server.json --noEmit",
-    "lint": "oxlint src server --deny-warnings",
-    "test": "vitest run",
-    "test:run": "vitest run",
+    "build": "node scripts/build-assets.mjs",
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "generate": "wrangler types && npm run build",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.dom.json && tsc --noEmit -p tsconfig.app.json",
+    "lint": "eslint . --max-warnings 0",
+    "format": "prettier --write src test public scripts docs .github \"*.{js,ts,json,jsonc}\" \"{README,SECURITY,CODE_QUALITY,EFFICIENCY,TESTING,ACCESSIBILITY,PROBLEM_ALIGNMENT}.md\"",
+    "format:check": "prettier --check src test public scripts docs .github \"*.{js,ts,json,jsonc}\" \"{README,SECURITY,CODE_QUALITY,EFFICIENCY,TESTING,ACCESSIBILITY,PROBLEM_ALIGNMENT}.md\"",
+    "test": "vitest run --coverage",
     "test:watch": "vitest",
-    "test:coverage": "vitest run --coverage",
-    "verify": "npm run typecheck && npm run lint && npm run test:run && npm run test:coverage && npm run build"
+    "precheck": "npm run generate",
+    "check": "npm run typecheck && npm run lint && npm run format:check && vitest run --coverage",
+    "pretest": "npm run generate"
+  },
+  "license": "MIT",
+  "type": "module",
+  "devDependencies": {
+    "@cloudflare/vitest-pool-workers": "^0.22.0",
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^22.20.3",
+    "@vitest/coverage-istanbul": "^4.1.12",
+    "axe-core": "^4.13.0",
+    "eslint": "^10.10.0",
+    "globals": "^17.13.0",
+    "jsdom": "^30.0.1",
+    "prettier": "^3.9.6",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.70.0",
+    "vitest": "^4.1.12",
+    "wrangler": "^4.131.1"
   },
   "dependencies": {
-    "@google/genai": "^3.6.1",
-    "clsx": "^2.1.1",
-    "cors": "^2.8.5",
-    "dotenv": "^16.4.7",
-    "express": "^5.0.1",
-    "express-rate-limit": "^7.5.0",
-    "firebase": "^13.4.0",
-    "firebase-admin": "^14.5.1",
-    "helmet": "^8.0.0",
-    "lucide-react": "^1.16.0",
-    "react": "^19.0.0",
-    "react-dom": "^19.0.0",
-    "react-router-dom": "^7.2.0",
-    "tailwind-merge": "^3.0.2",
-    "zod": "^4.6.7"
+    "hono": "^4.13.7",
+    "zod": "4.6.7"
   },
-  "devDependencies": {
-    "@tailwindcss/vite": "^4.0.9",
-    "@testing-library/jest-dom": "^6.6.3",
-    "@testing-library/react": "^16.2.0",
-    "@testing-library/user-event": "^14.6.1",
-    "@types/cors": "^2.8.17",
-    "@types/express": "^5.0.0",
-    "@types/node": "^22.13.5",
-    "@types/react": "^19.0.10",
-    "@types/react-dom": "^19.0.4",
-    "@vitejs/plugin-react": "^4.3.4",
-    "@vitest/coverage-v8": "^4.1.11",
-    "jsdom": "^26.0.0",
-    "oxlint": "^0.15.12",
-    "tailwindcss": "^4.0.9",
-    "tsx": "^4.19.3",
-    "typescript": "^5.7.3",
-    "vite": "^6.2.0",
-    "vitest": "^4.1.11"
+  "private": true,
+  "engines": {
+    "node": ">=22"
   },
   "overrides": {
-    "@grpc/grpc-js": "^1.14.7"
+    "sharp": "0.35.5",
+    "undici": "7.30.1",
+    "zod": "4.6.7"
+  },
+  "allowScripts": {
+    "workerd@1.20260815.1": true,
+    "esbuild@0.28.1": true,
+    "esbuild@0.28.2": true,
+    "workerd@1.20261019.1": true,
+    "fsevents": false
   }
 }
